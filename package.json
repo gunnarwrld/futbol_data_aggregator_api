@@ -1,0 +1,54 @@
+{
+  "name": "futbol-data-aggregator-api",
+  "version": "0.1.0",
+  "description": "High-Performance Soccer Data Aggregator & REST API — pulls live and historical data from API-Football, normalizes it into PostgreSQL via Prisma, and serves it through optimized, rate-limited, cached Express endpoints.",
+  "type": "module",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run lint && npm run format:check && npm run test"
+  },
+  "keywords": [
+    "soccer",
+    "football",
+    "api",
+    "rest-api",
+    "express",
+    "typescript",
+    "prisma",
+    "postgresql",
+    "redis",
+    "data-aggregator",
+    "api-football",
+    "caching",
+    "rate-limiting"
+  ],
+  "author": "Gunnar Arias <gunnarwrld>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gunnarwrld/futbol_data_aggregator_api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gunnarwrld/futbol_data_aggregator_api/issues"
+  },
+  "homepage": "https://github.com/gunnarwrld/futbol_data_aggregator_api#readme"
+}
