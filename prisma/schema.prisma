@@ -1,0 +1,327 @@
+// ──────────────────────────────────────────────────────────
+// Prisma Schema — Fútbol Data Aggregator
+// ──────────────────────────────────────────────────────────
+// This schema defines the normalized relational model for
+// soccer data aggregated from API-Football.
+// ──────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────────────────
+// Country
+// ──────────────────────────────────────────────────────────
+
+model Country {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique @db.VarChar(100)
+  code      String?  @db.VarChar(5)
+  flag      String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  leagues League[]
+  teams   Team[]
+
+  @@map("countries")
+}
+
+// ──────────────────────────────────────────────────────────
+// League / Competition
+// ──────────────────────────────────────────────────────────
+
+model League {
+  id          Int      @id @default(autoincrement())
+  externalId  Int      @unique @map("external_id")
+  name        String   @db.VarChar(200)
+  type        String   @db.VarChar(50) // "League" | "Cup"
+  logo        String?  @db.VarChar(500)
+  countryId   Int      @map("country_id")
+  season      Int
+  seasonStart DateTime? @map("season_start")
+  seasonEnd   DateTime? @map("season_end")
+  isCurrent   Boolean  @default(false) @map("is_current")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  country  Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  matches  Match[]
+  standings Standing[]
+
+  @@unique([externalId, season])
+  @@index([countryId])
+  @@index([season])
+  @@map("leagues")
+}
+
+// ──────────────────────────────────────────────────────────
+// Team
+// ──────────────────────────────────────────────────────────
+
+model Team {
+  id         Int      @id @default(autoincrement())
+  externalId Int      @unique @map("external_id")
+  name       String   @db.VarChar(200)
+  code       String?  @db.VarChar(10)
+  logo       String?  @db.VarChar(500)
+  founded    Int?
+  national   Boolean  @default(false)
+  countryId  Int?     @map("country_id")
+  venueId    Int?     @unique @map("venue_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  country     Country?  @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  venue       Venue?    @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  homeMatches Match[]   @relation("HomeTeam")
+  awayMatches Match[]   @relation("AwayTeam")
+  players     Player[]
+  standings   Standing[]
+
+  @@index([countryId])
+  @@map("teams")
+}
+
+// ──────────────────────────────────────────────────────────
+// Venue / Stadium
+// ──────────────────────────────────────────────────────────
+
+model Venue {
+  id         Int      @id @default(autoincrement())
+  externalId Int      @unique @map("external_id")
+  name       String   @db.VarChar(200)
+  address    String?  @db.VarChar(300)
+  city       String?  @db.VarChar(100)
+  capacity   Int?
+  surface    String?  @db.VarChar(50)
+  image      String?  @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  team    Team?
+  matches Match[]
+
+  @@map("venues")
+}
+
+// ──────────────────────────────────────────────────────────
+// Player
+// ──────────────────────────────────────────────────────────
+
+model Player {
+  id           Int      @id @default(autoincrement())
+  externalId   Int      @unique @map("external_id")
+  name         String   @db.VarChar(200)
+  firstname    String?  @db.VarChar(100)
+  lastname     String?  @db.VarChar(100)
+  age          Int?
+  dateOfBirth  DateTime? @map("date_of_birth")
+  nationality  String?  @db.VarChar(100)
+  height       String?  @db.VarChar(10)
+  weight       String?  @db.VarChar(10)
+  photo        String?  @db.VarChar(500)
+  position     String?  @db.VarChar(30)
+  teamId       Int?     @map("team_id")
+  injured      Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  team         Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  matchEvents  MatchEvent[]
+  statistics   PlayerStatistic[]
+
+  @@index([teamId])
+  @@index([nationality])
+  @@map("players")
+}
+
+// ──────────────────────────────────────────────────────────
+// Match / Fixture
+// ──────────────────────────────────────────────────────────
+
+model Match {
+  id           Int       @id @default(autoincrement())
+  externalId   Int       @unique @map("external_id")
+  leagueId     Int       @map("league_id")
+  season       Int
+  round        String?   @db.VarChar(100)
+  date         DateTime
+  timestamp    BigInt?
+  timezone     String?   @db.VarChar(50)
+  status       String    @db.VarChar(20) // "NS", "1H", "HT", "2H", "FT", "AET", "PEN", etc.
+  statusLong   String?   @map("status_long") @db.VarChar(50)
+  elapsed      Int?
+  venueId      Int?      @map("venue_id")
+  referee      String?   @db.VarChar(100)
+
+  // Score
+  homeTeamId   Int       @map("home_team_id")
+  awayTeamId   Int       @map("away_team_id")
+  goalsHome    Int?      @map("goals_home")
+  goalsAway    Int?      @map("goals_away")
+  scoreHtHome  Int?      @map("score_ht_home")
+  scoreHtAway  Int?      @map("score_ht_away")
+  scoreFtHome  Int?      @map("score_ft_home")
+  scoreFtAway  Int?      @map("score_ft_away")
+  scoreEtHome  Int?      @map("score_et_home")
+  scoreEtAway  Int?      @map("score_et_away")
+  scorePenHome Int?      @map("score_pen_home")
+  scorePenAway Int?      @map("score_pen_away")
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  league       League    @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  homeTeam     Team      @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Cascade)
+  awayTeam     Team      @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Cascade)
+  venue        Venue?    @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  events       MatchEvent[]
+  statistics   MatchStatistic[]
+
+  @@index([leagueId, season])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([date])
+  @@index([status])
+  @@map("matches")
+}
+
+// ──────────────────────────────────────────────────────────
+// Match Events (Goals, Cards, Substitutions)
+// ──────────────────────────────────────────────────────────
+
+model MatchEvent {
+  id          Int      @id @default(autoincrement())
+  matchId     Int      @map("match_id")
+  elapsed     Int
+  extraTime   Int?     @map("extra_time")
+  type        String   @db.VarChar(30) // "Goal", "Card", "subst", "Var"
+  detail      String?  @db.VarChar(50) // "Normal Goal", "Yellow Card", etc.
+  playerId    Int?     @map("player_id")
+  teamSide    String?  @map("team_side") @db.VarChar(10) // "home" | "away"
+  comments    String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  match  Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([matchId])
+  @@index([playerId])
+  @@map("match_events")
+}
+
+// ──────────────────────────────────────────────────────────
+// Match Statistics (Team-level stats per match)
+// ──────────────────────────────────────────────────────────
+
+model MatchStatistic {
+  id                Int      @id @default(autoincrement())
+  matchId           Int      @map("match_id")
+  teamSide          String   @map("team_side") @db.VarChar(10)
+  shotsOnGoal       Int?     @map("shots_on_goal")
+  shotsOffGoal      Int?     @map("shots_off_goal")
+  totalShots        Int?     @map("total_shots")
+  blockedShots      Int?     @map("blocked_shots")
+  fouls             Int?
+  cornerKicks       Int?     @map("corner_kicks")
+  offsides          Int?
+  possession        String?  @db.VarChar(10)
+  yellowCards       Int?     @map("yellow_cards")
+  redCards          Int?     @map("red_cards")
+  saves             Int?
+  totalPasses       Int?     @map("total_passes")
+  passesAccurate    Int?     @map("passes_accurate")
+  passAccuracy      String?  @map("pass_accuracy") @db.VarChar(10)
+  expectedGoals     String?  @map("expected_goals") @db.VarChar(10)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, teamSide])
+  @@index([matchId])
+  @@map("match_statistics")
+}
+
+// ──────────────────────────────────────────────────────────
+// Player Statistics (Per-season performance)
+// ──────────────────────────────────────────────────────────
+
+model PlayerStatistic {
+  id             Int      @id @default(autoincrement())
+  playerId       Int      @map("player_id")
+  season         Int
+  appearances    Int?     @default(0)
+  lineups        Int?     @default(0)
+  minutes        Int?     @default(0)
+  goals          Int?     @default(0)
+  assists        Int?     @default(0)
+  yellowCards    Int?     @default(0) @map("yellow_cards")
+  redCards       Int?     @default(0) @map("red_cards")
+  rating         String?  @db.VarChar(10)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, season])
+  @@index([playerId])
+  @@map("player_statistics")
+}
+
+// ──────────────────────────────────────────────────────────
+// League Standings
+// ──────────────────────────────────────────────────────────
+
+model Standing {
+  id           Int      @id @default(autoincrement())
+  leagueId     Int      @map("league_id")
+  season       Int
+  teamId       Int      @map("team_id")
+  rank         Int
+  points       Int      @default(0)
+  goalsDiff    Int      @default(0) @map("goals_diff")
+  group        String?  @db.VarChar(50)
+  form         String?  @db.VarChar(20)
+  status       String?  @db.VarChar(50)
+  description  String?  @db.VarChar(200)
+  played       Int      @default(0)
+  wins         Int      @default(0)
+  draws        Int      @default(0)
+  losses       Int      @default(0)
+  goalsFor     Int      @default(0) @map("goals_for")
+  goalsAgainst Int      @default(0) @map("goals_against")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, season, teamId])
+  @@index([leagueId, season])
+  @@index([teamId])
+  @@map("standings")
+}
+
+// ──────────────────────────────────────────────────────────
+// Sync Log (Track API-Football data synchronization)
+// ──────────────────────────────────────────────────────────
+
+model SyncLog {
+  id          Int      @id @default(autoincrement())
+  entity      String   @db.VarChar(50) // "leagues", "teams", "matches", etc.
+  externalId  Int?     @map("external_id")
+  status      String   @db.VarChar(20) // "started", "completed", "failed"
+  recordCount Int?     @map("record_count")
+  error       String?  @db.Text
+  startedAt   DateTime @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([entity, status])
+  @@index([startedAt])
+  @@map("sync_logs")
+}
