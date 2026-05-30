@@ -3,23 +3,23 @@ import { matchService } from '../services/match.service.js';
 import { apiResponse } from '../utils/apiResponse.js';
 import { catchAsync } from '../utils/catchAsync.js';
 
-/**
- * Match Controller — HTTP Request/Response Layer
- */
 export const matchController = {
   findAll: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const page = Number(req.query['page']) || 1;
     const limit = Math.min(Number(req.query['limit']) || 20, 100);
-    const sortBy = (req.query['sortBy'] as string) || 'date';
+    const sortBy = (req.query['sortBy'] as string) || 'matchDate';
     const sortOrder = (req.query['sortOrder'] as 'asc' | 'desc') || 'desc';
 
     const filters = {
-      leagueId: req.query['leagueId'] ? Number(req.query['leagueId']) : undefined,
-      season: req.query['season'] ? Number(req.query['season']) : undefined,
-      teamId: req.query['teamId'] ? Number(req.query['teamId']) : undefined,
+      leagueId: req.query['leagueId'] as string | undefined,
+      teamId: req.query['teamId'] as string | undefined,
       status: req.query['status'] as string | undefined,
-      dateFrom: req.query['dateFrom'] ? new Date(req.query['dateFrom'] as string) : undefined,
-      dateTo: req.query['dateTo'] ? new Date(req.query['dateTo'] as string) : undefined,
+      startDate: req.query['startDate']
+        ? new Date(req.query['startDate'] as string)
+        : undefined,
+      endDate: req.query['endDate']
+        ? new Date(req.query['endDate'] as string)
+        : undefined,
     };
 
     const result = await matchService.findAll({ page, limit, sortBy, sortOrder }, filters);
@@ -32,19 +32,15 @@ export const matchController = {
     });
   }),
 
-  findById: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = Number(req.params['id']);
-    const match = await matchService.findById(id);
-    apiResponse.success(res, 200, match);
+  findLiveMatches: catchAsync(async (_req: Request, res: Response): Promise<void> => {
+    const liveMatches = await matchService.findLiveMatches();
+    apiResponse.success(res, 200, liveMatches);
   }),
 
-  /**
-   * GET /api/v1/matches/live
-   * Returns all currently in-progress matches.
-   */
-  findLive: catchAsync(async (_req: Request, res: Response): Promise<void> => {
-    const matches = await matchService.findLive();
-    apiResponse.success(res, 200, matches);
+  findById: catchAsync(async (req: Request, res: Response): Promise<void> => {
+    const id = req.params['id'] as string;
+    const match = await matchService.findById(id);
+    apiResponse.success(res, 200, match);
   }),
 
   create: catchAsync(async (req: Request, res: Response): Promise<void> => {
@@ -53,13 +49,13 @@ export const matchController = {
   }),
 
   update: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = Number(req.params['id']);
+    const id = req.params['id'] as string;
     const match = await matchService.update(id, req.body as Parameters<typeof matchService.update>[1]);
     apiResponse.success(res, 200, match);
   }),
 
   delete: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = Number(req.params['id']);
+    const id = req.params['id'] as string;
     await matchService.delete(id);
     apiResponse.noContent(res);
   }),

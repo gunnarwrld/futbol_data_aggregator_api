@@ -2,20 +2,15 @@ import { prisma } from '../config/database.js';
 import { type PaginationOptions, type PaginatedResult } from '../types/index.js';
 import { type Team, type Prisma } from '@prisma/client';
 
-/**
- * Team Repository — Data Access Layer
- */
 export const teamRepository = {
   async findAll(
     options: PaginationOptions,
-    filters?: { countryId?: number; national?: boolean; search?: string },
+    filters?: { name?: string },
   ): Promise<PaginatedResult<Team>> {
     const where: Prisma.TeamWhereInput = {};
 
-    if (filters?.countryId) where.countryId = filters.countryId;
-    if (filters?.national !== undefined) where.national = filters.national;
-    if (filters?.search) {
-      where.name = { contains: filters.search, mode: 'insensitive' };
+    if (filters?.name) {
+      where.name = { contains: filters.name, mode: 'insensitive' };
     }
 
     const [data, total] = await Promise.all([
@@ -24,7 +19,6 @@ export const teamRepository = {
         skip: (options.page - 1) * options.limit,
         take: options.limit,
         orderBy: { [options.sortBy]: options.sortOrder },
-        include: { country: true, venue: true },
       }),
       prisma.team.count({ where }),
     ]);
@@ -38,17 +32,15 @@ export const teamRepository = {
     };
   },
 
-  async findById(id: number): Promise<Team | null> {
+  async findById(id: string): Promise<Team | null> {
     return prisma.team.findUnique({
       where: { id },
-      include: { country: true, venue: true, players: true },
     });
   },
 
   async findByExternalId(externalId: number): Promise<Team | null> {
     return prisma.team.findUnique({
       where: { externalId },
-      include: { country: true, venue: true },
     });
   },
 
@@ -56,7 +48,7 @@ export const teamRepository = {
     return prisma.team.create({ data });
   },
 
-  async update(id: number, data: Prisma.TeamUpdateInput): Promise<Team> {
+  async update(id: string, data: Prisma.TeamUpdateInput): Promise<Team> {
     return prisma.team.update({ where: { id }, data });
   },
 
@@ -71,7 +63,7 @@ export const teamRepository = {
     });
   },
 
-  async delete(id: number): Promise<Team> {
+  async delete(id: string): Promise<Team> {
     return prisma.team.delete({ where: { id } });
   },
 };

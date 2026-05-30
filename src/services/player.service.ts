@@ -3,23 +3,15 @@ import { AppError } from '../utils/AppError.js';
 import { type PaginationOptions, type PaginatedResult } from '../types/index.js';
 import { type Player, type Prisma } from '@prisma/client';
 
-/**
- * Player Service — Business Logic Layer
- */
 export const playerService = {
   async findAll(
     options: PaginationOptions,
-    filters?: {
-      teamId?: number;
-      position?: string;
-      nationality?: string;
-      search?: string;
-    },
+    filters?: { teamId?: string; position?: string },
   ): Promise<PaginatedResult<Player>> {
     return playerRepository.findAll(options, filters);
   },
 
-  async findById(id: number): Promise<Player> {
+  async findById(id: string): Promise<Player> {
     const player = await playerRepository.findById(id);
     if (!player) throw AppError.notFound('Player', id);
     return player;
@@ -35,12 +27,12 @@ export const playerService = {
     return playerRepository.create(data);
   },
 
-  async update(id: number, data: Prisma.PlayerUpdateInput): Promise<Player> {
+  async update(id: string, data: Prisma.PlayerUpdateInput): Promise<Player> {
     await playerService.findById(id);
     return playerRepository.update(id, data);
   },
 
-  async delete(id: number): Promise<void> {
+  async delete(id: string): Promise<void> {
     await playerService.findById(id);
     await playerRepository.delete(id);
   },
