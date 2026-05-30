@@ -21,7 +21,7 @@ Request → Routes → Controllers → Services → Repositories → Database
                                      ↕
                                Integrations (API-Football)
                                      ↕
-                                Workers (Cron)
+                          BullMQ Workers (Redis-backed)
 ```
 
 | Layer | Responsibility |
@@ -31,8 +31,8 @@ Request → Routes → Controllers → Services → Repositories → Database
 | **Services** | Business rules, orchestration, error handling |
 | **Repositories** | Database queries via Prisma. **Zero business logic.** |
 | **Integrations** | Third-party API clients (API-Football) |
-| **Workers** | Background cron jobs for data synchronization |
-| **Middleware** | Cross-cutting concerns (auth, caching, rate limiting, validation) |
+| **Workers** | BullMQ distributed job processors for data synchronization |
+| **Middleware** | Cross-cutting concerns (caching, rate limiting, validation, error handling) |
 
 ---
 
@@ -40,28 +40,30 @@ Request → Routes → Controllers → Services → Repositories → Database
 
 ```
 ├── prisma/
-│   └── schema.prisma          # Database schema & models
+│   ├── schema.prisma            # Database schema & models
+│   ├── prisma.config.ts         # Prisma 7 configuration
+│   └── migrations/              # SQL migration history
 ├── src/
-│   ├── config/                # Environment, logger, DB, Redis setup
-│   ├── controllers/           # HTTP request/response handlers
-│   ├── integrations/          # Third-party API clients
-│   ├── middleware/            # Express middleware (errors, cache, auth, validation)
-│   ├── repositories/         # Data access layer (Prisma queries)
-│   ├── routes/               # Route definitions (versioned: v1, v2, ...)
-│   ├── services/             # Business logic layer
-│   ├── types/                # Shared TypeScript type definitions
-│   ├── utils/                # Utilities (AppError, catchAsync, apiResponse)
-│   ├── workers/              # Background jobs & cron tasks
-│   ├── app.ts                # Express application factory
-│   └── server.ts             # Entry point with graceful shutdown
+│   ├── config/                  # Environment, logger, DB, Redis, BullMQ queue setup
+│   ├── controllers/             # HTTP request/response handlers
+│   ├── integrations/            # Third-party API clients (API-Football)
+│   ├── middleware/              # Express middleware (errors, cache, rate limit, validation)
+│   ├── repositories/            # Data access layer (Prisma queries)
+│   ├── routes/                  # Route definitions (versioned: v1, v2, ...)
+│   ├── services/                # Business logic + sync services
+│   ├── types/                   # Shared TypeScript type definitions
+│   ├── utils/                   # Utilities (AppError, catchAsync, apiResponse)
+│   ├── workers/                 # BullMQ worker initialization & scheduling
+│   ├── app.ts                   # Express application factory
+│   └── server.ts                # Entry point with graceful shutdown
 ├── tests/
-│   ├── unit/                 # Unit tests
-│   └── integration/          # Integration tests
-├── .eslintrc.cjs             # ESLint configuration
-├── .prettierrc               # Prettier configuration
-├── tsconfig.json             # TypeScript configuration
-├── vitest.config.ts          # Test configuration
-└── package.json              # Project manifest
+│   ├── unit/                    # Unit tests
+│   └── integration/             # Integration tests
+├── .eslintrc.cjs                # ESLint configuration
+├── .prettierrc                  # Prettier configuration
+├── tsconfig.json                # TypeScript configuration
+├── vitest.config.ts             # Test configuration
+└── package.json                 # Project manifest
 ```
 
 ---
@@ -202,12 +204,45 @@ All list endpoints support:
 | **Express** | HTTP framework |
 | **Prisma** | ORM & database toolkit |
 | **PostgreSQL** | Primary relational database |
-| **Redis** | Caching layer & rate limit store |
+| **Redis** | Caching layer, rate limit store & BullMQ job queue backend |
+| **BullMQ** | Distributed job queue for API-Football sync workers |
 | **Pino** | Structured JSON logging |
 | **Zod** | Runtime schema validation |
 | **Vitest** | Unit & integration testing |
+| **Husky + Commitlint** | Git hook enforcement of Conventional Commits |
 | **ESLint** | Code quality & consistency |
 | **Prettier** | Code formatting |
+
+---
+
+## ⚙️ BullMQ Distributed Workers
+
+Instead of basic cron jobs (which would duplicate work if scaled to multiple servers), this project uses **[BullMQ](https://docs.bullmq.io/)** — a Redis-backed distributed job queue that **guarantees exactly-once execution per interval**, even across 10+ server instances.
+
+### Why BullMQ?
+
+If this API gets popular and you scale it by deploying two backend servers to handle the traffic, a standard cron package (like `node-cron`) will run on **both servers simultaneously**. This means:
+- You fetch the external API **twice** at the exact same second
+- You immediately burn through your API-Football rate limits
+- You potentially cause database collisions from duplicate inserts
+
+BullMQ solves this by using Redis as a **distributed lock**. Only one server picks up each job.
+
+### Job Schedule
+
+| Queue | Interval | Description |
+|---|---|---|
+| `sync-leagues` | Daily at 3:00 AM | Fetches all leagues from API-Football |
+| `sync-teams` | Daily at 4:00 AM | Fetches teams per tracked league |
+| `sync-matches` | Every 6 hours | Catches newly scheduled fixtures |
+| `sync-live-matches` | Every 60 seconds | Real-time score & event updates |
+
+### Job Configuration
+
+- **Retries**: 3 attempts with exponential backoff (5s → 10s → 20s)
+- **Cleanup**: Completed jobs kept for 1 hour, failed jobs kept for 24 hours
+- **Concurrency**: 1 job at a time per worker to respect API-Football rate limits
+- **Live matches**: No retries — the next 60-second interval handles it
 
 ---
 
