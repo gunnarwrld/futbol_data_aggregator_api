@@ -3,6 +3,7 @@ import { config } from './config/index.js';
 import { logger } from './config/logger.js';
 import { disconnectDatabase } from './config/database.js';
 import { disconnectRedis } from './config/redis.js';
+import { initializeWorkers, shutdownWorkers } from './workers/index.js';
 
 /**
  * Server entry point.
@@ -25,6 +26,11 @@ const server = app.listen(config.PORT, () => {
   );
   logger.info(`📚 API docs: http://localhost:${config.PORT}/api/v1`);
   logger.info(`❤️  Health check: http://localhost:${config.PORT}/health`);
+
+  // Start BullMQ workers after the server is ready
+  initializeWorkers().catch((err) => {
+    logger.error({ err }, 'Failed to initialize BullMQ workers');
+  });
 });
 
 /* ── Graceful Shutdown ───────────────────────────────────── */
@@ -56,10 +62,13 @@ async function gracefulShutdown(signal: string): Promise<void> {
     });
     logger.info('HTTP server closed');
 
-    // 2. Disconnect database
+    // 2. Shut down BullMQ workers and queues
+    await shutdownWorkers();
+
+    // 3. Disconnect database
     await disconnectDatabase();
 
-    // 3. Disconnect Redis
+    // 4. Disconnect Redis
     await disconnectRedis();
 
     logger.info('Graceful shutdown complete');
