@@ -1,22 +1,22 @@
 import { Router } from 'express';
 import { leagueController } from '../../controllers/league.controller.js';
+import { cacheMiddleware } from '../../middleware/cache.js';
 
 /**
  * League Routes — /api/v1/leagues
- *
- * Defines HTTP endpoints for league operations.
- * Each route maps directly to a controller method.
  */
 const router = Router();
 
+// Cache list for 5 minutes
 router
   .route('/')
-  .get(leagueController.findAll)
+  .get(cacheMiddleware(300, 'leagues'), leagueController.findAll)
   .post(leagueController.create);
 
+// Cache individual league for 10 minutes
 router
   .route('/:id')
-  .get(leagueController.findById)
+  .get(cacheMiddleware(600, 'leagues'), leagueController.findById)
   .put(leagueController.update)
   .delete(leagueController.delete);
 
