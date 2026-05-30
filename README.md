@@ -22,6 +22,8 @@ Request → Routes → Controllers → Services → Repositories → Database
                                Integrations (API-Football)
                                      ↕
                           BullMQ Workers (Redis-backed)
+                                     ↓
+                        Real-Time Push (Socket.io)
 ```
 
 | Layer | Responsibility |
@@ -206,6 +208,7 @@ All list endpoints support:
 | **PostgreSQL** | Primary relational database |
 | **Redis** | Caching layer, rate limit store & BullMQ job queue backend |
 | **BullMQ** | Distributed job queue for API-Football sync workers |
+| **Socket.io** | Real-time push layer for live match updates via WebSockets |
 | **Pino** | Structured JSON logging |
 | **Zod** | Runtime schema validation |
 | **Vitest** | Unit & integration testing |
@@ -243,6 +246,43 @@ BullMQ solves this by using Redis as a **distributed lock**. Only one server pic
 - **Cleanup**: Completed jobs kept for 1 hour, failed jobs kept for 24 hours
 - **Concurrency**: 1 job at a time per worker to respect API-Football rate limits
 - **Live matches**: No retries — the next 60-second interval handles it
+
+---
+
+## ⚡ Real-Time Push Layer
+
+The API features a real-time push layer powered by **Socket.io**. Instead of having mobile or web clients constantly poll the server for live match updates, the BullMQ worker broadcasts changes the moment they happen.
+
+When the `sync-live-matches` worker fetches data from API-Football every 60 seconds:
+1. It compares the external data with the PostgreSQL state.
+2. If the score or status changed, it broadcasts a `match:update` event.
+3. If a new event occurred (goal, red card, substitution), it broadcasts a `match:event` event.
+
+### Connecting & Subscribing
+
+Clients connect to `/api/v1/realtime` and can subscribe to global or match-specific rooms:
+
+```javascript
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:3000", { path: "/api/v1/realtime" });
+
+// Subscribe to ALL live matches
+socket.emit("subscribe:live-matches");
+
+// Subscribe to a specific match
+socket.emit("subscribe:match", "c6c4c0f2-b88e-4a6b-9c76-d444456913a6");
+
+// Listen for score updates
+socket.on("match:update", (payload) => {
+  console.log("Score updated!", payload.homeScore, payload.awayScore);
+});
+
+// Listen for goals, cards, etc.
+socket.on("match:event", (event) => {
+  if (event.eventType === "GOAL") alert("GOAL!!!");
+});
+```
 
 ---
 
