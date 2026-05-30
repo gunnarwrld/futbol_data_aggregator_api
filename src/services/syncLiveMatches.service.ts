@@ -2,6 +2,7 @@ import { apiFootball } from '../integrations/apiFootball.js';
 import { invalidateCache } from '../middleware/cache.js';
 import { logger } from '../config/logger.js';
 import { prisma } from '../config/database.js';
+import { getSocketIO } from '../config/socket.js';
 import { type ApiFootballFixture, type ApiFootballFixtureEvent } from '../types/index.js';
 
 /**
@@ -71,7 +72,7 @@ export const syncLiveMatchesService = {
         // Find the match in our database by externalId
         const existingMatch = await prisma.match.findUnique({
           where: { externalId: item.fixture.id },
-          select: { id: true },
+          select: { id: true, homeScore: true, awayScore: true, status: true },
         });
 
         if (!existingMatch) {
@@ -82,15 +83,44 @@ export const syncLiveMatchesService = {
           continue;
         }
 
+        const newHomeScore = item.goals.home ?? 0;
+        const newAwayScore = item.goals.away ?? 0;
+        const hasScoreChanged =
+          existingMatch.homeScore !== newHomeScore ||
+          existingMatch.awayScore !== newAwayScore ||
+          existingMatch.status !== 'LIVE';
+
         // Update score and status
-        await prisma.match.update({
+        const updatedMatch = await prisma.match.update({
           where: { id: existingMatch.id },
           data: {
             status: 'LIVE',
-            homeScore: item.goals.home ?? 0,
-            awayScore: item.goals.away ?? 0,
+            homeScore: newHomeScore,
+            awayScore: newAwayScore,
           },
         });
+
+        // Broadcast score update if changed
+        if (hasScoreChanged) {
+          try {
+            const io = getSocketIO();
+            const payload = {
+              matchId: updatedMatch.id,
+              homeScore: newHomeScore,
+              awayScore: newAwayScore,
+              status: 'LIVE',
+            };
+            
+            // Broadcast to specific match room
+            io.to(`match:${updatedMatch.id}`).emit('match:update', payload);
+            // Broadcast to global live matches room
+            io.to('live-matches').emit('match:update', payload);
+            
+            logger.debug({ matchId: updatedMatch.id }, 'Broadcasted score update via Socket.io');
+          } catch (err) {
+             logger.warn('Socket.io not initialized or failed to emit');
+          }
+        }
 
         updated++;
 
@@ -135,7 +165,7 @@ export const syncLiveMatchesService = {
               });
 
               if (!existing) {
-                await prisma.matchEvent.create({
+                const newMatchEvent = await prisma.matchEvent.create({
                   data: {
                     matchId: existingMatch.id,
                     teamId: team.id,
@@ -144,6 +174,16 @@ export const syncLiveMatchesService = {
                     minute: event.time.elapsed,
                   },
                 });
+                
+                // Broadcast new event
+                try {
+                  const io = getSocketIO();
+                  io.to(`match:${existingMatch.id}`).emit('match:event', newMatchEvent);
+                  io.to('live-matches').emit('match:event', newMatchEvent);
+                } catch (err) {
+                  logger.warn('Socket.io not initialized or failed to emit');
+                }
+                
                 events++;
               }
             } catch (err) {

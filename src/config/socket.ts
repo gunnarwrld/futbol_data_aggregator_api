@@ -1,7 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import type { Server as HttpServer } from 'node:http';
 import { logger } from './logger.js';
-import { config } from './index.js';
 
 let io: SocketIOServer | null = null;
 
