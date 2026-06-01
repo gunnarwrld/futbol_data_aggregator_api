@@ -3,6 +3,7 @@ import { config } from './config/index.js';
 import { logger } from './config/logger.js';
 import { disconnectDatabase } from './config/database.js';
 import { disconnectRedis } from './config/redis.js';
+import { initializeSocket, getSocketIO } from './config/socket.js';
 import { initializeWorkers, shutdownWorkers } from './workers/index.js';
 
 /**
@@ -26,6 +27,9 @@ const server = app.listen(config.PORT, () => {
   );
   logger.info(`📚 API docs: http://localhost:${config.PORT}/api/v1`);
   logger.info(`❤️  Health check: http://localhost:${config.PORT}/health`);
+
+  // Initialize Real-time Push Layer (Socket.io)
+  initializeSocket(server);
 
   // Start BullMQ workers after the server is ready
   initializeWorkers().catch((err) => {
@@ -61,6 +65,14 @@ async function gracefulShutdown(signal: string): Promise<void> {
       });
     });
     logger.info('HTTP server closed');
+
+    // 1.5. Disconnect Real-time Push Layer
+    try {
+      getSocketIO().close();
+      logger.info('Socket.io server closed');
+    } catch {
+      // Socket might not be initialized if startup failed early
+    }
 
     // 2. Shut down BullMQ workers and queues
     await shutdownWorkers();
