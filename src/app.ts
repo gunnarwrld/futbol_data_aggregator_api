@@ -101,7 +101,7 @@ app.get('/health', (_req, res) => {
 app.use('/api', apiRouter);
 
 /* ── 10. 404 Catch-All ───────────────────────────────────── */
-app.all('*', (req, _res, next) => {
+app.all(/.*/, (req, _res, next) => {
   next(AppError.notFound(`Route ${req.method} ${req.originalUrl}`));
 });
 
