@@ -85,3 +85,19 @@ model MatchEvent {
   @@index([matchId])
   @@index([playerId])
 }
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  name       String    // Human-readable label, e.g. "Mobile App Production"
+  hashedKey  String    @unique // SHA-256 hex digest of the raw key
+  prefix     String    // First 8 chars of raw key for identification
+  tier       String    @default("standard") // "standard" | "premium"
+  rateLimit  Int       @default(1000) // Requests per hour for this key
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([isActive])
+}
