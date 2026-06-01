@@ -31,9 +31,6 @@ export const rateLimiter = rateLimit({
       statusCode: 429,
     },
   },
-  keyGenerator: (req) => {
-    return req.ip ?? req.socket.remoteAddress ?? 'unknown';
-  },
 });
 
 /**
@@ -46,8 +43,5 @@ export const strictRateLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, _res, next) => {
     next(AppError.tooManyRequests('Rate limit exceeded for this endpoint'));
-  },
-  keyGenerator: (req) => {
-    return req.ip ?? req.socket.remoteAddress ?? 'unknown';
   },
 });
