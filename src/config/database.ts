@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import { config } from './index.js';
 import { logger } from './logger.js';
 
@@ -12,9 +14,14 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+// Initialize the database connection pool using the pg driver
+const pool = new pg.Pool({ connectionString: config.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
+    adapter,
     log:
       config.NODE_ENV === 'development'
         ? [
