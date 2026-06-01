@@ -3,9 +3,6 @@ import { playerService } from '../services/player.service.js';
 import { apiResponse } from '../utils/apiResponse.js';
 import { catchAsync } from '../utils/catchAsync.js';
 
-/**
- * Player Controller — HTTP Request/Response Layer
- */
 export const playerController = {
   findAll: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const page = Number(req.query['page']) || 1;
@@ -14,10 +11,8 @@ export const playerController = {
     const sortOrder = (req.query['sortOrder'] as 'asc' | 'desc') || 'asc';
 
     const filters = {
-      teamId: req.query['teamId'] ? Number(req.query['teamId']) : undefined,
+      teamId: req.query['teamId'] as string | undefined,
       position: req.query['position'] as string | undefined,
-      nationality: req.query['nationality'] as string | undefined,
-      search: req.query['search'] as string | undefined,
     };
 
     const result = await playerService.findAll({ page, limit, sortBy, sortOrder }, filters);
@@ -31,7 +26,7 @@ export const playerController = {
   }),
 
   findById: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = Number(req.params['id']);
+    const id = req.params['id'] as string;
     const player = await playerService.findById(id);
     apiResponse.success(res, 200, player);
   }),
@@ -42,13 +37,13 @@ export const playerController = {
   }),
 
   update: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = Number(req.params['id']);
+    const id = req.params['id'] as string;
     const player = await playerService.update(id, req.body as Parameters<typeof playerService.update>[1]);
     apiResponse.success(res, 200, player);
   }),
 
   delete: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = Number(req.params['id']);
+    const id = req.params['id'] as string;
     await playerService.delete(id);
     apiResponse.noContent(res);
   }),

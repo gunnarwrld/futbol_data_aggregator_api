@@ -2,27 +2,15 @@ import { prisma } from '../config/database.js';
 import { type PaginationOptions, type PaginatedResult } from '../types/index.js';
 import { type Player, type Prisma } from '@prisma/client';
 
-/**
- * Player Repository — Data Access Layer
- */
 export const playerRepository = {
   async findAll(
     options: PaginationOptions,
-    filters?: {
-      teamId?: number;
-      position?: string;
-      nationality?: string;
-      search?: string;
-    },
+    filters?: { teamId?: string; position?: string },
   ): Promise<PaginatedResult<Player>> {
     const where: Prisma.PlayerWhereInput = {};
 
     if (filters?.teamId) where.teamId = filters.teamId;
     if (filters?.position) where.position = filters.position;
-    if (filters?.nationality) where.nationality = filters.nationality;
-    if (filters?.search) {
-      where.name = { contains: filters.search, mode: 'insensitive' };
-    }
 
     const [data, total] = await Promise.all([
       prisma.player.findMany({
@@ -30,7 +18,6 @@ export const playerRepository = {
         skip: (options.page - 1) * options.limit,
         take: options.limit,
         orderBy: { [options.sortBy]: options.sortOrder },
-        include: { team: true },
       }),
       prisma.player.count({ where }),
     ]);
@@ -44,17 +31,18 @@ export const playerRepository = {
     };
   },
 
-  async findById(id: number): Promise<Player | null> {
+  async findById(id: string): Promise<Player | null> {
     return prisma.player.findUnique({
       where: { id },
-      include: { team: true, statistics: true },
+      include: {
+        team: true,
+      },
     });
   },
 
   async findByExternalId(externalId: number): Promise<Player | null> {
     return prisma.player.findUnique({
       where: { externalId },
-      include: { team: true },
     });
   },
 
@@ -62,7 +50,7 @@ export const playerRepository = {
     return prisma.player.create({ data });
   },
 
-  async update(id: number, data: Prisma.PlayerUpdateInput): Promise<Player> {
+  async update(id: string, data: Prisma.PlayerUpdateInput): Promise<Player> {
     return prisma.player.update({ where: { id }, data });
   },
 
@@ -77,7 +65,7 @@ export const playerRepository = {
     });
   },
 
-  async delete(id: number): Promise<Player> {
+  async delete(id: string): Promise<Player> {
     return prisma.player.delete({ where: { id } });
   },
 };

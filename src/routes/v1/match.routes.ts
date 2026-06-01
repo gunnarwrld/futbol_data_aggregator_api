@@ -5,7 +5,8 @@ import { cacheMiddleware } from '../../middleware/cache.js';
 const router = Router();
 
 // Live matches — short cache TTL (30 seconds)
-router.get('/live', cacheMiddleware(30, 'matches:live'), matchController.findLive);
+router.get('/live', cacheMiddleware(30, 'matches:live'), matchController.findLiveMatches);
+router.get('/:id', matchController.findById);
 
 router
   .route('/')

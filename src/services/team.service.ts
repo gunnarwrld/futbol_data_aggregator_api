@@ -3,18 +3,15 @@ import { AppError } from '../utils/AppError.js';
 import { type PaginationOptions, type PaginatedResult } from '../types/index.js';
 import { type Team, type Prisma } from '@prisma/client';
 
-/**
- * Team Service — Business Logic Layer
- */
 export const teamService = {
   async findAll(
     options: PaginationOptions,
-    filters?: { countryId?: number; national?: boolean; search?: string },
+    filters?: { name?: string },
   ): Promise<PaginatedResult<Team>> {
     return teamRepository.findAll(options, filters);
   },
 
-  async findById(id: number): Promise<Team> {
+  async findById(id: string): Promise<Team> {
     const team = await teamRepository.findById(id);
     if (!team) throw AppError.notFound('Team', id);
     return team;
@@ -30,12 +27,12 @@ export const teamService = {
     return teamRepository.create(data);
   },
 
-  async update(id: number, data: Prisma.TeamUpdateInput): Promise<Team> {
+  async update(id: string, data: Prisma.TeamUpdateInput): Promise<Team> {
     await teamService.findById(id);
     return teamRepository.update(id, data);
   },
 
-  async delete(id: number): Promise<void> {
+  async delete(id: string): Promise<void> {
     await teamService.findById(id);
     await teamRepository.delete(id);
   },

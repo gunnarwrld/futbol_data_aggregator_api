@@ -2,36 +2,33 @@ import { prisma } from '../config/database.js';
 import { type PaginationOptions, type PaginatedResult } from '../types/index.js';
 import { type Match, type Prisma } from '@prisma/client';
 
-/**
- * Match Repository — Data Access Layer
- */
 export const matchRepository = {
   async findAll(
     options: PaginationOptions,
     filters?: {
-      leagueId?: number;
-      season?: number;
-      teamId?: number;
+      leagueId?: string;
+      teamId?: string;
       status?: string;
-      dateFrom?: Date;
-      dateTo?: Date;
+      startDate?: Date;
+      endDate?: Date;
     },
   ): Promise<PaginatedResult<Match>> {
     const where: Prisma.MatchWhereInput = {};
 
     if (filters?.leagueId) where.leagueId = filters.leagueId;
-    if (filters?.season) where.season = filters.season;
     if (filters?.status) where.status = filters.status;
+
     if (filters?.teamId) {
       where.OR = [
         { homeTeamId: filters.teamId },
         { awayTeamId: filters.teamId },
       ];
     }
-    if (filters?.dateFrom ?? filters?.dateTo) {
-      where.date = {};
-      if (filters?.dateFrom) where.date.gte = filters.dateFrom;
-      if (filters?.dateTo) where.date.lte = filters.dateTo;
+
+    if (filters?.startDate || filters?.endDate) {
+      where.matchDate = {};
+      if (filters?.startDate) where.matchDate.gte = filters.startDate;
+      if (filters?.endDate) where.matchDate.lte = filters.endDate;
     }
 
     const [data, total] = await Promise.all([
@@ -41,10 +38,8 @@ export const matchRepository = {
         take: options.limit,
         orderBy: { [options.sortBy]: options.sortOrder },
         include: {
-          league: true,
-          homeTeam: true,
-          awayTeam: true,
-          venue: true,
+          homeTeam: { select: { id: true, name: true, shortName: true } },
+          awayTeam: { select: { id: true, name: true, shortName: true } },
         },
       }),
       prisma.match.count({ where }),
@@ -59,16 +54,33 @@ export const matchRepository = {
     };
   },
 
-  async findById(id: number): Promise<Match | null> {
+  async findLiveMatches(): Promise<Match[]> {
+    return prisma.match.findMany({
+      where: {
+        status: { in: ['LIVE', 'IN_PLAY', 'PAUSED'] }, // Adjust based on API-Football statuses
+      },
+      orderBy: { matchDate: 'desc' },
+      include: {
+        homeTeam: { select: { id: true, name: true, shortName: true } },
+        awayTeam: { select: { id: true, name: true, shortName: true } },
+        events: {
+          orderBy: { minute: 'desc' },
+          take: 5,
+        },
+      },
+    });
+  },
+
+  async findById(id: string): Promise<Match | null> {
     return prisma.match.findUnique({
       where: { id },
       include: {
         league: true,
         homeTeam: true,
         awayTeam: true,
-        venue: true,
-        events: { orderBy: { elapsed: 'asc' } },
-        statistics: true,
+        events: {
+          orderBy: { minute: 'asc' },
+        },
       },
     });
   },
@@ -76,17 +88,6 @@ export const matchRepository = {
   async findByExternalId(externalId: number): Promise<Match | null> {
     return prisma.match.findUnique({
       where: { externalId },
-      include: { league: true, homeTeam: true, awayTeam: true },
-    });
-  },
-
-  async findLive(): Promise<Match[]> {
-    return prisma.match.findMany({
-      where: {
-        status: { in: ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'] },
-      },
-      include: { league: true, homeTeam: true, awayTeam: true, venue: true },
-      orderBy: { date: 'asc' },
     });
   },
 
@@ -94,7 +95,7 @@ export const matchRepository = {
     return prisma.match.create({ data });
   },
 
-  async update(id: number, data: Prisma.MatchUpdateInput): Promise<Match> {
+  async update(id: string, data: Prisma.MatchUpdateInput): Promise<Match> {
     return prisma.match.update({ where: { id }, data });
   },
 
@@ -109,7 +110,7 @@ export const matchRepository = {
     });
   },
 
-  async delete(id: number): Promise<Match> {
+  async delete(id: string): Promise<Match> {
     return prisma.match.delete({ where: { id } });
   },
 };
