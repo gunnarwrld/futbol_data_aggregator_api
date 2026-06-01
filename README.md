@@ -162,6 +162,9 @@ All endpoints return a standardized JSON envelope:
 | `POST` | `/api/v1/players` | Create a player |
 | `PUT` | `/api/v1/players/:id` | Update a player |
 | `DELETE` | `/api/v1/players/:id` | Delete a player |
+| `POST` | `/api/v1/api-keys` | Generate a new API key |
+| `GET` | `/api/v1/api-keys` | List all API keys |
+| `PATCH` | `/api/v1/api-keys/:id/revoke` | Revoke an API key |
 
 ### Query Parameters
 
@@ -283,6 +286,82 @@ socket.on("match:event", (event) => {
   if (event.eventType === "GOAL") alert("GOAL!!!");
 });
 ```
+
+---
+
+## 🔐 Edge Security: API Key Provisioning & Rate Limiting
+
+The API is protected by a **Redis-backed sliding window rate limiter** with tiered access control via API keys.
+
+### The Problem
+
+Without edge security, a single user writing a bad script could hit the Express server 10,000 times a second, crushing the database and burning bandwidth.
+
+### The Solution
+
+| Tier | Limit | Identifier |
+|---|---|---|
+| **Anonymous** (no key) | 50 requests/hour | IP address |
+| **Standard** API key | 1,000 requests/hour | API key ID |
+| **Premium** API key | 5,000 requests/hour | API key ID |
+
+### Sliding Window Algorithm
+
+Instead of a fixed-window counter (which allows double-burst attacks at window boundaries), this uses a **Sliding Window Log** algorithm:
+
+1. Each request adds a timestamped entry to a Redis sorted set
+2. Entries older than 1 hour are atomically pruned
+3. The remaining count is checked against the tier limit
+4. All three operations run in a single Redis pipeline (one round-trip)
+
+### Generating an API Key
+
+```bash
+curl -X POST http://localhost:3000/api/v1/api-keys \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Mobile App", "tier": "standard"}'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "rawKey": "fda_a1b2c3d4e5f6...",
+    "apiKey": {
+      "id": "uuid",
+      "name": "My Mobile App",
+      "prefix": "fda_a1b2c3d4",
+      "tier": "standard",
+      "rateLimit": 1000
+    }
+  },
+  "meta": {
+    "warning": "Store the rawKey securely — it will NOT be shown again."
+  }
+}
+```
+
+### Using the Key
+
+```bash
+curl http://localhost:3000/api/v1/leagues \
+  -H "x-api-key: fda_a1b2c3d4e5f6..."
+```
+
+Every response includes standard rate limit headers:
+```
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 997
+X-RateLimit-Reset: 3600
+```
+
+### Security Design
+
+- **Keys are hashed (SHA-256)** at rest — the raw key is shown once on creation
+- **Expired or revoked keys** return `401 Unauthorized`
+- **Rate limiter fails open** — if Redis goes down, requests are allowed through
+- **Key creation is rate-limited** by the strict limiter to prevent abuse
 
 ---
 
