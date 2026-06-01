@@ -2,6 +2,7 @@ import { type Request, type Response } from 'express';
 import { matchService } from '../services/match.service.js';
 import { apiResponse } from '../utils/apiResponse.js';
 import { catchAsync } from '../utils/catchAsync.js';
+import { invalidateCache } from '../middleware/cache.js';
 
 export const matchController = {
   findAll: catchAsync(async (req: Request, res: Response): Promise<void> => {
@@ -45,18 +46,21 @@ export const matchController = {
 
   create: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const match = await matchService.create(req.body as Parameters<typeof matchService.create>[0]);
+    await invalidateCache('matches:*');
     apiResponse.created(res, match);
   }),
 
   update: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const id = req.params['id'] as string;
     const match = await matchService.update(id, req.body as Parameters<typeof matchService.update>[1]);
+    await invalidateCache('matches:*');
     apiResponse.success(res, 200, match);
   }),
 
   delete: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const id = req.params['id'] as string;
     await matchService.delete(id);
+    await invalidateCache('matches:*');
     apiResponse.noContent(res);
   }),
 };

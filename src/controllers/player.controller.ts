@@ -2,6 +2,7 @@ import { type Request, type Response } from 'express';
 import { playerService } from '../services/player.service.js';
 import { apiResponse } from '../utils/apiResponse.js';
 import { catchAsync } from '../utils/catchAsync.js';
+import { invalidateCache } from '../middleware/cache.js';
 
 export const playerController = {
   findAll: catchAsync(async (req: Request, res: Response): Promise<void> => {
@@ -33,18 +34,21 @@ export const playerController = {
 
   create: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const player = await playerService.create(req.body as Parameters<typeof playerService.create>[0]);
+    await invalidateCache('players:*');
     apiResponse.created(res, player);
   }),
 
   update: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const id = req.params['id'] as string;
     const player = await playerService.update(id, req.body as Parameters<typeof playerService.update>[1]);
+    await invalidateCache('players:*');
     apiResponse.success(res, 200, player);
   }),
 
   delete: catchAsync(async (req: Request, res: Response): Promise<void> => {
     const id = req.params['id'] as string;
     await playerService.delete(id);
+    await invalidateCache('players:*');
     apiResponse.noContent(res);
   }),
 };

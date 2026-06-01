@@ -6,11 +6,13 @@ const router = Router();
 
 // Live matches — short cache TTL (30 seconds)
 router.get('/live', cacheMiddleware(30, 'matches:live'), matchController.findLiveMatches);
-router.get('/:id', matchController.findById);
+
+// Cache individual match for 60 seconds (they update often)
+router.get('/:id', cacheMiddleware(60, 'matches'), matchController.findById);
 
 router
   .route('/')
-  .get(matchController.findAll)
+  .get(cacheMiddleware(120, 'matches'), matchController.findAll)
   .post(matchController.create);
 
 router
