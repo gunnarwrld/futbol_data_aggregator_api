@@ -4,7 +4,8 @@ import helmet from 'helmet';
 import compression from 'compression';
 import pinoHttp from 'pino-http';
 import { logger } from './config/logger.js';
-import { rateLimiter } from './middleware/rateLimiter.js';
+import { authenticateApiKey } from './middleware/authenticateApiKey.js';
+import { slidingWindowRateLimiter } from './middleware/slidingWindowRateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/index.js';
 import { AppError } from './utils/AppError.js';
@@ -13,7 +14,7 @@ import { AppError } from './utils/AppError.js';
  * Express application factory.
  *
  * Creates and configures the Express app with security, parsing,
- * compression, logging, rate limiting, API routes, and error handling.
+ * compression, logging, API key auth, rate limiting, API routes, and error handling.
  *
  * Middleware execution order matters:
  * 1. Security headers (helmet)
@@ -21,10 +22,11 @@ import { AppError } from './utils/AppError.js';
  * 3. Compression
  * 4. Body parsing
  * 5. Request logging
- * 6. Rate limiting
- * 7. API routes
- * 8. 404 catch-all
- * 9. Global error handler
+ * 6. API Key Authentication (extracts x-api-key → req.apiKey)
+ * 7. Sliding Window Rate Limiting (Redis-backed, tier-aware)
+ * 8. API routes
+ * 9. 404 catch-all
+ * 10. Global error handler
  */
 const app = express();
 
@@ -37,7 +39,7 @@ app.use(
     origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Api-Key'],
     maxAge: 86400, // 24 hours
   }),
 );
@@ -77,10 +79,13 @@ app.use(
   }),
 );
 
-/* ── 6. Rate Limiting ────────────────────────────────────── */
-app.use(rateLimiter);
+/* ── 6. API Key Authentication ───────────────────────────── */
+app.use(authenticateApiKey);
 
-/* ── 7. Health Check ─────────────────────────────────────── */
+/* ── 7. Sliding Window Rate Limiting (Redis-backed) ──────── */
+app.use(slidingWindowRateLimiter);
+
+/* ── 8. Health Check ─────────────────────────────────────── */
 app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
@@ -92,15 +97,15 @@ app.get('/health', (_req, res) => {
   });
 });
 
-/* ── 8. API Routes ───────────────────────────────────────── */
+/* ── 9. API Routes ───────────────────────────────────────── */
 app.use('/api', apiRouter);
 
-/* ── 9. 404 Catch-All ────────────────────────────────────── */
+/* ── 10. 404 Catch-All ───────────────────────────────────── */
 app.all('*', (req, _res, next) => {
   next(AppError.notFound(`Route ${req.method} ${req.originalUrl}`));
 });
 
-/* ── 10. Global Error Handler ────────────────────────────── */
+/* ── 11. Global Error Handler ────────────────────────────── */
 app.use(errorHandler);
 
 export { app };

@@ -76,9 +76,9 @@ export const apiKeyController = {
    */
   async revoke(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { id } = req.params;
+      const id = req.params.id;
 
-      if (!id) {
+      if (!id || typeof id !== 'string') {
         throw AppError.badRequest('API key ID is required');
       }
 
