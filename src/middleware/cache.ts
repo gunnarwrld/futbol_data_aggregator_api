@@ -45,15 +45,15 @@ export const cacheMiddleware = (ttlSeconds = 300, keyPrefix = 'cache') => {
       logger.debug({ cacheKey }, 'Cache MISS');
       res.setHeader('X-Cache', 'MISS');
 
-      // Intercept the response to cache it
+      // Intercept the response to cache it. Error payloads are not stored:
+      // a cached 404 would keep hiding a record after it is created.
       const originalJson = res.json.bind(res);
       res.json = (body: unknown) => {
-        // Cache the response asynchronously — don't block the response
-        redis
-          .setex(cacheKey, ttlSeconds, JSON.stringify(body))
-          .catch((err: unknown) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          redis.setex(cacheKey, ttlSeconds, JSON.stringify(body)).catch((err: unknown) => {
             logger.error({ err, cacheKey }, 'Failed to write to cache');
           });
+        }
 
         return originalJson(body);
       };

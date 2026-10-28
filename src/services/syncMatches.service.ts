@@ -122,10 +122,7 @@ export const syncMatchesService = {
 
             synced++;
           } catch (err) {
-            logger.error(
-              { err, fixtureId: item.fixture.id },
-              'Failed to sync fixture',
-            );
+            logger.error({ err, fixtureId: item.fixture.id }, 'Failed to sync fixture');
             errors++;
           }
         }

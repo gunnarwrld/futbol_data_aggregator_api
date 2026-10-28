@@ -33,8 +33,8 @@ const WINDOW_SIZE_SECONDS = 3600; // 1 hour
  * problem of fixed windows, and without the memory overhead of a
  * full sliding window counter.
  *
- * All three operations (prune, add, count) are executed atomically
- * via a Redis pipeline to minimize round-trips.
+ * Prune, add, count, and expire run in one Redis pipeline (one round-trip).
+ * A rejected request is removed again so it does not consume the window.
  *
  * Response headers (RFC 6585 / draft-ietf-httpapi-ratelimit):
  * - X-RateLimit-Limit: maximum requests per window
@@ -49,23 +49,29 @@ export async function slidingWindowRateLimiter(
 ): Promise<void> {
   try {
     // Determine identity and limit based on API key presence
-    const isAuthenticated = !!req.apiKey;
+    const apiKey = req.apiKey;
+    const isAuthenticated = apiKey !== undefined;
     const identifier = isAuthenticated
-      ? `apikey:${req.apiKey!.id}`
+      ? `apikey:${apiKey.id}`
       : `ip:${req.ip ?? req.socket.remoteAddress ?? 'unknown'}`;
 
-    const limit = isAuthenticated ? req.apiKey!.rateLimit : ANONYMOUS_RATE_LIMIT;
+    const limit = isAuthenticated ? apiKey.rateLimit : ANONYMOUS_RATE_LIMIT;
 
     const redisKey = `ratelimit:${identifier}`;
     const now = Date.now();
     const windowStart = now - WINDOW_SIZE_SECONDS * 1000;
+    // One member id for both the insert and a possible rollback. Generating
+    // it twice made ZREM delete a key that was never added, so rejected
+    // requests kept consuming the window.
+    const member = `${String(now)}:${Math.random().toString(36).slice(2)}`;
 
-    // Atomic pipeline: prune → add → count → get oldest
+    // Pipeline: prune → add → count → expire. Not a Redis transaction;
+    // a null or thrown result fails open below.
     const pipeline = redis.pipeline();
-    pipeline.zremrangebyscore(redisKey, 0, windowStart); // 1. Remove expired entries
-    pipeline.zadd(redisKey, now, `${now}:${Math.random()}`); // 2. Add current request
-    pipeline.zcard(redisKey); // 3. Count requests in window
-    pipeline.expire(redisKey, WINDOW_SIZE_SECONDS); // 4. Set TTL for cleanup
+    pipeline.zremrangebyscore(redisKey, 0, windowStart);
+    pipeline.zadd(redisKey, now, member);
+    pipeline.zcard(redisKey);
+    pipeline.expire(redisKey, WINDOW_SIZE_SECONDS);
 
     const results = await pipeline.exec();
 
@@ -76,7 +82,8 @@ export async function slidingWindowRateLimiter(
       return;
     }
 
-    const requestCount = (results[2]?.[1] as number) ?? 0;
+    const rawCount = results[2]?.[1];
+    const requestCount = typeof rawCount === 'number' ? rawCount : 0;
     const remaining = Math.max(0, limit - requestCount);
     const resetSeconds = WINDOW_SIZE_SECONDS;
 
@@ -86,15 +93,13 @@ export async function slidingWindowRateLimiter(
     res.setHeader('X-RateLimit-Reset', resetSeconds);
 
     if (requestCount > limit) {
-      // Remove the request we just added — it shouldn't count
-      // (we added it before checking, so undo on rejection)
-      redis.zrem(redisKey, `${now}:${Math.random()}`).catch(() => {});
+      await redis.zrem(redisKey, member).catch((err: unknown) => {
+        logger.error({ err }, 'Failed to roll back rejected rate-limit entry');
+      });
 
-      logger.warn(
-        { identifier, requestCount, limit },
-        'Rate limit exceeded',
-      );
+      logger.warn({ identifier, requestCount, limit }, 'Rate limit exceeded');
 
+      res.setHeader('X-RateLimit-Remaining', 0);
       res.setHeader('Retry-After', resetSeconds);
       res.status(429).json({
         success: false,

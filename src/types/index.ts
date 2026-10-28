@@ -107,7 +107,7 @@ export interface ApiFootballLeague {
   league: {
     id: number;
     name: string;
-    type: string;         // "League" | "Cup"
+    type: string; // "League" | "Cup"
     logo: string;
   };
   country: {
@@ -115,12 +115,12 @@ export interface ApiFootballLeague {
     code: string | null;
     flag: string | null;
   };
-  seasons: Array<{
+  seasons: {
     year: number;
     start: string;
     end: string;
     current: boolean;
-  }>;
+  }[];
 }
 
 /**
@@ -131,7 +131,7 @@ export interface ApiFootballTeam {
   team: {
     id: number;
     name: string;
-    code: string | null;  // Short name, e.g. "POR"
+    code: string | null; // Short name, e.g. "POR"
     country: string;
     founded: number | null;
     national: boolean;
@@ -157,11 +157,11 @@ export interface ApiFootballFixture {
     id: number;
     referee: string | null;
     timezone: string;
-    date: string;            // ISO 8601
+    date: string; // ISO 8601
     timestamp: number;
     status: {
-      long: string;          // "Match Finished", "Not Started", etc.
-      short: string;         // "FT", "NS", "1H", "2H", "HT", "LIVE", etc.
+      long: string; // "Match Finished", "Not Started", etc.
+      short: string; // "FT", "NS", "1H", "2H", "HT", "LIVE", etc.
       elapsed: number | null;
     };
   };
@@ -212,8 +212,7 @@ export interface ApiFootballFixtureEvent {
     id: number | null;
     name: string | null;
   };
-  type: string;       // "Goal", "Card", "subst", "Var"
-  detail: string;     // "Normal Goal", "Yellow Card", "Red Card", "Substitution 1", etc.
+  type: string; // "Goal", "Card", "subst", "Var"
+  detail: string; // "Normal Goal", "Yellow Card", "Red Card", "Substitution 1", etc.
   comments: string | null;
 }
-

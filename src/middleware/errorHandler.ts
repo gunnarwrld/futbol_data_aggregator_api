@@ -89,10 +89,7 @@ export const errorHandler = (
   logger.error({ err }, 'Unexpected error');
 
   const errorBody: ApiErrorResponse['error'] = {
-    message:
-      config.NODE_ENV === 'production'
-        ? 'Internal server error'
-        : err.message,
+    message: config.NODE_ENV === 'production' ? 'Internal server error' : err.message,
     code: 'INTERNAL_ERROR',
     statusCode: 500,
   };
@@ -117,11 +114,38 @@ interface MappedError {
   statusCode: number;
 }
 
+function readTarget(target: unknown): string | undefined {
+  if (typeof target === 'string' && target.length > 0) return target.replaceAll('"', '');
+  if (typeof target === 'number' || typeof target === 'boolean') return String(target);
+  if (!Array.isArray(target)) return undefined;
+
+  const parts = target
+    .filter((item): item is string | number => typeof item === 'string' || typeof item === 'number')
+    .map((item) => String(item).replaceAll('"', ''))
+    .filter((item) => item.length > 0);
+
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+/**
+ * Prisma 7 driver adapters put the conflicting columns on
+ * `driverAdapterError.cause.constraint.fields` instead of `meta.target`.
+ */
+function formatPrismaTarget(meta: Record<string, unknown> | undefined): string {
+  const direct = readTarget(meta?.target);
+  if (direct) return direct;
+
+  const adapter = meta?.driverAdapterError as
+    | { cause?: { constraint?: { fields?: unknown } } }
+    | undefined;
+  return readTarget(adapter?.cause?.constraint?.fields) ?? 'unknown';
+}
+
 function mapPrismaError(err: { code: string; meta?: Record<string, unknown> }): MappedError {
   switch (err.code) {
     case 'P2002':
       return {
-        message: `Duplicate value for unique field: ${String(err.meta?.['target'] ?? 'unknown')}`,
+        message: `Duplicate value for unique field: ${formatPrismaTarget(err.meta)}`,
         code: 'DUPLICATE_ENTRY',
         statusCode: 409,
       };

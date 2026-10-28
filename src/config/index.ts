@@ -13,26 +13,21 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 
   /* ── Database (PostgreSQL via Prisma) ──────────────────── */
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.url(),
 
   /* ── Redis ─────────────────────────────────────────────── */
-  REDIS_URL: z.string().url().default('redis://localhost:6379'),
+  REDIS_URL: z.url().default('redis://localhost:6379'),
 
   /* ── API-Football ──────────────────────────────────────── */
   API_FOOTBALL_KEY: z.string().min(1),
-  API_FOOTBALL_BASE_URL: z
-    .string()
-    .url()
-    .default('https://v3.football.api-sports.io'),
+  API_FOOTBALL_BASE_URL: z.url().default('https://v3.football.api-sports.io'),
 
   /* ── Rate Limiting ─────────────────────────────────────── */
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
 
   /* ── Logging ───────────────────────────────────────────── */
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 
 /**
@@ -45,6 +40,8 @@ if (!parsed.success) {
   // eslint-disable-next-line no-console
   console.error(
     '❌ Invalid environment variables:\n',
+    // Flattened field names are the startup diagnostic this process prints.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     parsed.error.flatten().fieldErrors,
   );
   process.exit(1);

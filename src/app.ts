@@ -22,11 +22,12 @@ import { AppError } from './utils/AppError.js';
  * 3. Compression
  * 4. Body parsing
  * 5. Request logging
- * 6. API Key Authentication (extracts x-api-key → req.apiKey)
- * 7. Sliding Window Rate Limiting (Redis-backed, tier-aware)
- * 8. API routes
- * 9. 404 catch-all
- * 10. Global error handler
+ * 6. Health check (exempt from auth and rate limiting so probes stay cheap)
+ * 7. API Key Authentication (extracts x-api-key → req.apiKey)
+ * 8. Sliding Window Rate Limiting (Redis-backed, tier-aware)
+ * 9. API routes
+ * 10. 404 catch-all
+ * 11. Global error handler
  */
 const app = express();
 
@@ -58,11 +59,7 @@ app.use(
     autoLogging: {
       ignore: (req: { url?: string }) => req.url === '/health',
     },
-    customLogLevel: (
-      _req: unknown,
-      res: { statusCode?: number },
-      err: unknown,
-    ) => {
+    customLogLevel: (_req: unknown, res: { statusCode?: number }, err: unknown) => {
       if (err ?? (res.statusCode && res.statusCode >= 500)) return 'error';
       if (res.statusCode && res.statusCode >= 400) return 'warn';
       return 'info';
@@ -79,13 +76,10 @@ app.use(
   }),
 );
 
-/* ── 6. API Key Authentication ───────────────────────────── */
-app.use(authenticateApiKey);
-
-/* ── 7. Sliding Window Rate Limiting (Redis-backed) ──────── */
-app.use(slidingWindowRateLimiter);
-
-/* ── 8. Health Check ─────────────────────────────────────── */
+/* ── 6. Health Check ─────────────────────────────────────── */
+// Registered before auth and the rate limiter. Orchestrators poll this
+// often; counting those probes against the anonymous 50 req/hour budget
+// marks a healthy process as rate-limited.
 app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
@@ -96,6 +90,12 @@ app.get('/health', (_req, res) => {
     },
   });
 });
+
+/* ── 7. API Key Authentication ───────────────────────────── */
+app.use(authenticateApiKey);
+
+/* ── 8. Sliding Window Rate Limiting (Redis-backed) ──────── */
+app.use(slidingWindowRateLimiter);
 
 /* ── 9. API Routes ───────────────────────────────────────── */
 app.use('/api', apiRouter);

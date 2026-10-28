@@ -51,10 +51,7 @@ export const leagueRepository = {
     return prisma.league.update({ where: { id }, data });
   },
 
-  async upsertByExternalId(
-    externalId: number,
-    data: Prisma.LeagueCreateInput,
-  ): Promise<League> {
+  async upsertByExternalId(externalId: number, data: Prisma.LeagueCreateInput): Promise<League> {
     return prisma.league.upsert({
       where: { externalId },
       create: data,
