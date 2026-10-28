@@ -54,10 +54,7 @@ export const playerRepository = {
     return prisma.player.update({ where: { id }, data });
   },
 
-  async upsertByExternalId(
-    externalId: number,
-    data: Prisma.PlayerCreateInput,
-  ): Promise<Player> {
+  async upsertByExternalId(externalId: number, data: Prisma.PlayerCreateInput): Promise<Player> {
     return prisma.player.upsert({
       where: { externalId },
       create: data,

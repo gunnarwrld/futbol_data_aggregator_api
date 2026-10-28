@@ -6,14 +6,17 @@ import { invalidateCache } from '../middleware/cache.js';
 
 export const playerController = {
   findAll: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const page = Number(req.query['page']) || 1;
-    const limit = Math.min(Number(req.query['limit']) || 20, 100);
-    const sortBy = (req.query['sortBy'] as string) || 'name';
-    const sortOrder = (req.query['sortOrder'] as 'asc' | 'desc') || 'asc';
+    const page = Number(req.query.page) || 1;
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const sortBy = (req.query.sortBy as string) || 'name';
+    const requestedOrder = req.query.sortOrder;
+    const sortOrder = (
+      requestedOrder === undefined || requestedOrder === '' ? 'asc' : requestedOrder
+    ) as 'asc' | 'desc';
 
     const filters = {
-      teamId: req.query['teamId'] as string | undefined,
-      position: req.query['position'] as string | undefined,
+      teamId: req.query.teamId as string | undefined,
+      position: req.query.position as string | undefined,
     };
 
     const result = await playerService.findAll({ page, limit, sortBy, sortOrder }, filters);
@@ -27,26 +30,31 @@ export const playerController = {
   }),
 
   findById: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = req.params['id'] as string;
+    const id = req.params.id as string;
     const player = await playerService.findById(id);
     apiResponse.success(res, 200, player);
   }),
 
   create: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const player = await playerService.create(req.body as Parameters<typeof playerService.create>[0]);
+    const player = await playerService.create(
+      req.body as Parameters<typeof playerService.create>[0],
+    );
     await invalidateCache('players:*');
     apiResponse.created(res, player);
   }),
 
   update: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = req.params['id'] as string;
-    const player = await playerService.update(id, req.body as Parameters<typeof playerService.update>[1]);
+    const id = req.params.id as string;
+    const player = await playerService.update(
+      id,
+      req.body as Parameters<typeof playerService.update>[1],
+    );
     await invalidateCache('players:*');
     apiResponse.success(res, 200, player);
   }),
 
   delete: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = req.params['id'] as string;
+    const id = req.params.id as string;
     await playerService.delete(id);
     await invalidateCache('players:*');
     apiResponse.noContent(res);

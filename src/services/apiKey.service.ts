@@ -72,10 +72,7 @@ export const apiKeyService = {
       },
     });
 
-    logger.info(
-      { apiKeyId: apiKey.id, name: apiKey.name, tier, prefix },
-      'API key created',
-    );
+    logger.info({ apiKeyId: apiKey.id, name: apiKey.name, tier, prefix }, 'API key created');
 
     return {
       /** The raw key — shown ONCE, never stored or recoverable */

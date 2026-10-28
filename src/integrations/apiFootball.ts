@@ -3,6 +3,16 @@ import { logger } from '../config/logger.js';
 import { type ApiFootballResponse } from '../types/index.js';
 
 /**
+ * API-Football reports failures either as a non-empty array or as an object
+ * keyed by field. Empty arrays and empty objects are successful responses.
+ */
+function hasApiErrors(errors: unknown): boolean {
+  if (Array.isArray(errors)) return errors.length > 0;
+  if (typeof errors !== 'object' || errors === null) return false;
+  return Object.keys(errors).length > 0;
+}
+
+/**
  * API-Football HTTP client.
  *
  * Centralized client for making requests to the API-Football v3 API.
@@ -66,27 +76,17 @@ export const apiFootball = {
         'API-Football request failed',
       );
 
-      throw new Error(
-        `API-Football request failed: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`API-Football request failed: ${response.status} ${response.statusText}`);
     }
 
     const data = (await response.json()) as ApiFootballResponse<T>;
 
-    // Check for API-level errors
-    if (
-      data.errors &&
-      ((Array.isArray(data.errors) && data.errors.length > 0) ||
-        (!Array.isArray(data.errors) && Object.keys(data.errors).length > 0))
-    ) {
+    if (hasApiErrors(data.errors)) {
       logger.error({ endpoint, errors: data.errors }, 'API-Football returned errors');
       throw new Error(`API-Football errors: ${JSON.stringify(data.errors)}`);
     }
 
-    logger.debug(
-      { endpoint, results: data.results },
-      'API-Football response received',
-    );
+    logger.debug({ endpoint, results: data.results }, 'API-Football response received');
 
     return data;
   },

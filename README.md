@@ -2,28 +2,47 @@
 
 > **High-Performance Soccer Data Aggregator & REST API** — Pulls live and historical data from [API-Football](https://www.api-football.com/), normalizes it into PostgreSQL via Prisma, and serves it through optimized, rate-limited, cached Express endpoints.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-22_LTS-green?logo=node.js)](https://nodejs.org/)
-[![Express](https://img.shields.io/badge/Express-4.x-black?logo=express)](https://expressjs.com/)
-[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?logo=prisma)](https://www.prisma.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?logo=redis)](https://redis.io/)
+[![CI](https://github.com/gunnarwrld/futbol_data_aggregator_api/actions/workflows/ci.yml/badge.svg)](https://github.com/gunnarwrld/futbol_data_aggregator_api/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/line_coverage-%E2%89%A590%25-brightgreen)](https://github.com/gunnarwrld/futbol_data_aggregator_api/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22_LTS-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-5.2-000000?logo=express&logoColor=white)](https://expressjs.com/)
+[![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 ---
 
 ## 📐 Architecture
 
-This project follows a **strict layered architecture** with clean separation of concerns:
+This project follows a **strict layered architecture** with clean separation of concerns. BullMQ workers run in the API process and use Redis as a distributed lock, so scaling the API does not double-fetch API-Football.
 
-```
-Request → Routes → Controllers → Services → Repositories → Database
-                                     ↕
-                               Integrations (API-Football)
-                                     ↕
-                          BullMQ Workers (Redis-backed)
-                                     ↓
-                        Real-Time Push (Socket.io)
+```mermaid
+flowchart TD
+  clients[HTTP clients]
+  sockets[Socket.io clients]
+  health["GET /health"]
+  auth[API key middleware]
+  limit[Sliding-window rate limiter]
+  routes[Routes and controllers]
+  cache[Redis response cache]
+  services[Services]
+  repos[Repositories]
+  db[(PostgreSQL)]
+  redis[(Redis)]
+  workers[BullMQ workers]
+  football[API-Football]
+
+  clients --> health
+  clients --> auth --> limit --> routes
+  routes --> cache
+  cache --> redis
+  routes --> services --> repos --> db
+  services --> football
+  workers --> redis
+  workers --> services
+  workers --> sockets
 ```
 
 | Layer | Responsibility |
@@ -43,8 +62,11 @@ Request → Routes → Controllers → Services → Repositories → Database
 ```
 ├── prisma/
 │   ├── schema.prisma            # Database schema & models
-│   ├── prisma.config.ts         # Prisma 7 configuration
 │   └── migrations/              # SQL migration history
+├── prisma.config.ts             # Prisma 7 configuration
+├── Dockerfile                   # Multi-stage production image
+├── docker-compose.yml           # API, PostgreSQL 16, and Redis 7
+├── .github/workflows/ci.yml     # Lint, typecheck, tests, image build
 ├── src/
 │   ├── config/                  # Environment, logger, DB, Redis, BullMQ queue setup
 │   ├── controllers/             # HTTP request/response handlers
@@ -61,7 +83,7 @@ Request → Routes → Controllers → Services → Repositories → Database
 ├── tests/
 │   ├── unit/                    # Unit tests
 │   └── integration/             # Integration tests
-├── .eslintrc.cjs                # ESLint configuration
+├── eslint.config.mjs            # ESLint configuration
 ├── .prettierrc                  # Prettier configuration
 ├── tsconfig.json                # TypeScript configuration
 ├── vitest.config.ts             # Test configuration
@@ -79,27 +101,29 @@ Request → Routes → Controllers → Services → Repositories → Database
 - **Redis** ≥ 7
 - **API-Football API key** → [Get one here](https://dashboard.api-football.com/)
 
-### Installation
+### Docker Compose
+
+Compose starts PostgreSQL 16, Redis 7, and the API. The image applies migrations on startup. Workers start with the API process; there is no separate worker container. The database password in this file is a local placeholder.
 
 ```bash
-# Clone the repository
 git clone https://github.com/gunnarwrld/futbol_data_aggregator_api.git
 cd futbol_data_aggregator_api
 
-# Install dependencies
-npm install
-
-# Set up environment variables
+# Optional: put a real key in .env. Compose reads it for API_FOOTBALL_KEY.
 cp .env.example .env
-# Edit .env with your database URL, Redis URL, and API key
 
-# Generate Prisma client
+docker compose up --build
+```
+
+The API listens on `http://localhost:3000`. Postgres is published on `localhost:5432` and Redis on `localhost:6379` (`futbol` / `futbol`, database `futbol_data`). Sync jobs call API-Football and fail until `API_FOOTBALL_KEY` is a real key. The HTTP API still serves data you insert yourself.
+
+### Local Node process
+
+```bash
+npm install
+cp .env.example .env
 npx prisma generate
-
-# Run database migrations
 npx prisma migrate dev
-
-# Start development server
 npm run dev
 ```
 
@@ -190,9 +214,11 @@ All list endpoints support:
 | `npm run lint:fix` | Run ESLint with auto-fix |
 | `npm run format` | Format code with Prettier |
 | `npm run format:check` | Check formatting without changes |
-| `npm test` | Run tests with Vitest |
+| `npm test` | Run unit and integration tests |
+| `npm run test:unit` | Unit tests only. No database required |
+| `npm run test:integration` | HTTP tests against Postgres and Redis |
 | `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Run tests with coverage report |
+| `npm run test:coverage` | Tests plus the v8 coverage report |
 | `npm run typecheck` | TypeScript type checking |
 | `npm run validate` | Run all checks (typecheck + lint + format + test) |
 | `npm run db:generate` | Generate Prisma client |
@@ -205,11 +231,12 @@ All list endpoints support:
 
 | Technology | Purpose |
 |------------|---------|
-| **TypeScript** | Type safety & developer experience |
-| **Express** | HTTP framework |
-| **Prisma** | ORM & database toolkit |
-| **PostgreSQL** | Primary relational database |
-| **Redis** | Caching layer, rate limit store & BullMQ job queue backend |
+| **TypeScript 6** | Type safety & developer experience |
+| **Node.js 22** | Runtime |
+| **Express 5.2** | HTTP framework |
+| **Prisma 7** | ORM & database toolkit, with the `pg` driver adapter |
+| **PostgreSQL 16** | Primary relational database |
+| **Redis 7** | Caching layer, rate limit store & BullMQ job queue backend |
 | **BullMQ** | Distributed job queue for API-Football sync workers |
 | **Socket.io** | Real-time push layer for live match updates via WebSockets |
 | **Pino** | Structured JSON logging |
@@ -361,9 +388,35 @@ X-RateLimit-Reset: 3600
 - **Keys are hashed (SHA-256)** at rest — the raw key is shown once on creation
 - **Expired or revoked keys** return `401 Unauthorized`
 - **Rate limiter fails open** — if Redis goes down, requests are allowed through
-- **Key creation is rate-limited** by the strict limiter to prevent abuse
+- **Rejected requests do not consume the window** — the sorted-set entry is removed when the limit is exceeded
+- **`GET /health` is exempt** from authentication and the sliding window, so orchestrator probes are not capped at 50/hour
+- **Key creation is rate-limited** by an in-memory strict limiter to prevent abuse
 
 ---
+
+## 🧪 Tests
+
+Unit tests cover the sliding-window rate limiter, response cache, Zod request validation, error mapping, API-key hashing, the resource services, and the API-Football sync services. API-Football is mocked. Integration tests boot the Express app with Supertest against a real Postgres database and Redis. They exercise CRUD, pagination, cache hit/miss, API-key auth, and the hourly limit.
+
+Coverage is measured with Vitest's v8 provider on the request path (controllers, services, repositories, middleware, and the API-Football client). Process bootstrap is excluded: `server.ts`, the BullMQ worker wiring, the Socket.io server, and the Redis/Postgres connection modules. The current suite covers **96.4% of lines**, **95.7% of statements**, **92.1% of functions**, and **88.1% of branches**. CI fails if those fall below 90%, 90%, 85%, and 80%. The workflow prints the exact percentages in the job summary and uploads the `coverage/` report.
+
+```bash
+# Postgres and Redis. The Compose init script also creates futbol_data_test.
+docker compose up -d postgres redis
+
+npm run test:unit
+npm run test:integration
+npm run test:coverage
+```
+
+`tests/integration/globalSetup.ts` creates `futbol_data_test` if it is missing and runs `prisma migrate deploy`. Default URLs:
+
+```bash
+DATABASE_URL=postgresql://futbol:futbol@localhost:5432/futbol_data_test
+REDIS_URL=redis://127.0.0.1:6379/1
+```
+
+CI uses the same commands with GitHub Actions service containers (`postgres:16` and `redis:7`), then builds the production image with `docker build`.
 
 ## 📝 Commit Convention
 

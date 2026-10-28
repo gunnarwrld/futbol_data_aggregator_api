@@ -1,4 +1,11 @@
-import { Queue, Worker, type ConnectionOptions, type WorkerOptions, type QueueOptions } from 'bullmq';
+import {
+  Queue,
+  Worker,
+  type ConnectionOptions,
+  type Job,
+  type QueueOptions,
+  type WorkerOptions,
+} from 'bullmq';
 import { config } from './index.js';
 import { logger } from './logger.js';
 
@@ -32,12 +39,12 @@ const defaultJobOptions: QueueOptions['defaultJobOptions'] = {
     delay: 5000, // 5s → 10s → 20s
   },
   removeOnComplete: {
-    age: 3600,   // Keep completed jobs for 1 hour
-    count: 100,  // Keep last 100 completed jobs
+    age: 3600, // Keep completed jobs for 1 hour
+    count: 100, // Keep last 100 completed jobs
   },
   removeOnFail: {
-    age: 86400,  // Keep failed jobs for 24 hours
-    count: 500,  // Keep last 500 failed jobs
+    age: 86400, // Keep failed jobs for 24 hours
+    count: 500, // Keep last 500 failed jobs
   },
 };
 
@@ -74,7 +81,7 @@ export const syncLiveMatchesQueue = new Queue('sync-live-matches', {
  */
 export function createWorker(
   queueName: string,
-  processor: (job: import('bullmq').Job) => Promise<void>,
+  processor: (job: Job) => Promise<void>,
   opts?: Partial<WorkerOptions>,
 ): Worker {
   const worker = new Worker(queueName, processor, {
@@ -91,10 +98,7 @@ export function createWorker(
   });
 
   worker.on('failed', (job, err) => {
-    logger.error(
-      { queue: queueName, jobId: job?.id, jobName: job?.name, err },
-      'Job failed',
-    );
+    logger.error({ queue: queueName, jobId: job?.id, jobName: job?.name, err }, 'Job failed');
   });
 
   worker.on('error', (err) => {

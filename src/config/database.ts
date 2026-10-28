@@ -41,5 +41,8 @@ if (config.NODE_ENV !== 'production') {
  */
 export async function disconnectDatabase(): Promise<void> {
   await prisma.$disconnect();
+  // The pg pool is external and is not closed by Prisma unless
+  // disposeExternalPool is set. Close it so shutdown and tests release it.
+  await pool.end();
   logger.info('Database connection closed');
 }
