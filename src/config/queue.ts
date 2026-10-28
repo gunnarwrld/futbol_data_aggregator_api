@@ -1,13 +1,15 @@
-import { Queue, Worker, type ConnectionOptions, type WorkerOptions, type QueueOptions } from 'bullmq';
+import { Queue, Worker, type Job, type WorkerOptions, type QueueOptions } from 'bullmq';
 import { config } from './index.js';
 import { logger } from './logger.js';
+import { bullmqConnectionOptions } from './redisConnection.js';
 
 /**
  * BullMQ connection configuration.
  *
- * Shares the same Redis instance used for caching,
- * but BullMQ manages its own connection pool internally.
- * This prevents blocking the cache client during heavy job processing.
+ * Uses the full REDIS_URL — host, port, username, password, database index,
+ * and rediss:// TLS — the same material the cache client passes to ioredis.
+ * BullMQ copies this options object into its own client for each Queue and
+ * Worker, with maxRetriesPerRequest left null for blocking commands.
  *
  * Why BullMQ over node-cron?
  * ─────────────────────────
@@ -16,11 +18,7 @@ import { logger } from './logger.js';
  * even with 10 servers running, the API-Football fetch happens exactly ONCE
  * per interval. This protects rate limits and prevents database collisions.
  */
-const connection: ConnectionOptions = {
-  host: new URL(config.REDIS_URL).hostname,
-  port: Number(new URL(config.REDIS_URL).port) || 6379,
-  maxRetriesPerRequest: null, // Required by BullMQ — disables ioredis retry limit
-};
+const connection = bullmqConnectionOptions(config.REDIS_URL);
 
 /**
  * Default job options applied to all queues.
@@ -32,12 +30,12 @@ const defaultJobOptions: QueueOptions['defaultJobOptions'] = {
     delay: 5000, // 5s → 10s → 20s
   },
   removeOnComplete: {
-    age: 3600,   // Keep completed jobs for 1 hour
-    count: 100,  // Keep last 100 completed jobs
+    age: 3600, // Keep completed jobs for 1 hour
+    count: 100, // Keep last 100 completed jobs
   },
   removeOnFail: {
-    age: 86400,  // Keep failed jobs for 24 hours
-    count: 500,  // Keep last 500 failed jobs
+    age: 86400, // Keep failed jobs for 24 hours
+    count: 500, // Keep last 500 failed jobs
   },
 };
 
@@ -74,7 +72,7 @@ export const syncLiveMatchesQueue = new Queue('sync-live-matches', {
  */
 export function createWorker(
   queueName: string,
-  processor: (job: import('bullmq').Job) => Promise<void>,
+  processor: (job: Job) => Promise<void>,
   opts?: Partial<WorkerOptions>,
 ): Worker {
   const worker = new Worker(queueName, processor, {
@@ -91,10 +89,7 @@ export function createWorker(
   });
 
   worker.on('failed', (job, err) => {
-    logger.error(
-      { queue: queueName, jobId: job?.id, jobName: job?.name, err },
-      'Job failed',
-    );
+    logger.error({ queue: queueName, jobId: job?.id, jobName: job?.name, err }, 'Job failed');
   });
 
   worker.on('error', (err) => {
