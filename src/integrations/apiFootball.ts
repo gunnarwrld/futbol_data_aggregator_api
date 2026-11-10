@@ -72,6 +72,7 @@ export const apiFootball = {
           endpoint,
           status: response.status,
           statusText: response.statusText,
+          upstreamBody: await readErrorBody(response),
         },
         'API-Football request failed',
       );
@@ -98,3 +99,18 @@ export const apiFootball = {
     return apiFootball.get('/status');
   },
 };
+
+const MAX_ERROR_BODY_LENGTH = 500;
+
+/**
+ * Read a failed response's body for the log. API-Sports explains a 403 in the
+ * body (for example a missing application key); the status alone does not.
+ */
+async function readErrorBody(response: Response): Promise<string | undefined> {
+  try {
+    const body = await response.text();
+    return body.slice(0, MAX_ERROR_BODY_LENGTH);
+  } catch {
+    return undefined;
+  }
+}

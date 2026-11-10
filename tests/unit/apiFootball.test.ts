@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../src/config/logger.js';
 import { apiFootball } from '../../src/integrations/apiFootball.js';
 
 const fetchMock = vi.fn();
@@ -18,6 +19,7 @@ function jsonResponse(
 describe('apiFootball', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     fetchMock.mockReset();
   });
 
@@ -67,6 +69,26 @@ describe('apiFootball', () => {
 
     await expect(apiFootball.get('/fixtures')).rejects.toThrow(
       'API-Football request failed: 429 Too Many Requests',
+    );
+  });
+
+  it('logs the upstream body of an HTTP failure', async () => {
+    vi.stubGlobal('fetch', fetchMock);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const body = JSON.stringify({ errors: { token: 'Missing application key' } });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      text: async () => body,
+    });
+
+    await expect(apiFootball.get('/fixtures')).rejects.toThrow(
+      'API-Football request failed: 403 Forbidden',
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: '/fixtures', status: 403, upstreamBody: body }),
+      'API-Football request failed',
     );
   });
 

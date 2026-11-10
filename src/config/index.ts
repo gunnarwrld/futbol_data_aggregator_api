@@ -19,7 +19,8 @@ const envSchema = z.object({
   REDIS_URL: z.url().default('redis://localhost:6379'),
 
   /* ── API-Football ──────────────────────────────────────── */
-  API_FOOTBALL_KEY: z.string().min(1),
+  // Trimmed so a key pasted with whitespace fails here, not as an upstream 403.
+  API_FOOTBALL_KEY: z.string().trim().min(1),
   API_FOOTBALL_BASE_URL: z.url().default('https://v3.football.api-sports.io'),
 
   /* ── Rate Limiting ─────────────────────────────────────── */
