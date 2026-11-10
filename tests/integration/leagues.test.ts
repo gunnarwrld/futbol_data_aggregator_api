@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { app } from '../../src/app.js';
-import { createLeague } from './fixtures.js';
+import { apiKeyHeader, createLeague } from './fixtures.js';
 
 const MISSING_ID = '00000000-0000-4000-8000-000000000099';
 
@@ -37,7 +37,8 @@ describe('leagues API', () => {
   });
 
   it('creates, reads, updates, and deletes a league', async () => {
-    const created = await request(app).post('/api/v1/leagues').send({
+    const auth = await apiKeyHeader();
+    const created = await request(app).post('/api/v1/leagues').set(auth).send({
       name: 'Primeira Liga',
       country: 'Portugal',
       season: '2025/2026',
@@ -51,11 +52,14 @@ describe('leagues API', () => {
     expect(fetched.status).toBe(200);
     expect(fetched.body.data.externalId).toBe(94);
 
-    const updated = await request(app).put(`/api/v1/leagues/${id}`).send({ name: 'Liga Portugal' });
+    const updated = await request(app)
+      .put(`/api/v1/leagues/${id}`)
+      .set(auth)
+      .send({ name: 'Liga Portugal' });
     expect(updated.status).toBe(200);
     expect(updated.body.data.name).toBe('Liga Portugal');
 
-    const removed = await request(app).delete(`/api/v1/leagues/${id}`);
+    const removed = await request(app).delete(`/api/v1/leagues/${id}`).set(auth);
     expect(removed.status).toBe(204);
     expect(removed.text).toBe('');
 
@@ -66,12 +70,15 @@ describe('leagues API', () => {
 
   it('maps a duplicate external id to 409', async () => {
     await createLeague({ externalId: 94 });
-    const response = await request(app).post('/api/v1/leagues').send({
-      name: 'Other',
-      country: 'Portugal',
-      season: '2025/2026',
-      externalId: 94,
-    });
+    const response = await request(app)
+      .post('/api/v1/leagues')
+      .set(await apiKeyHeader())
+      .send({
+        name: 'Other',
+        country: 'Portugal',
+        season: '2025/2026',
+        externalId: 94,
+      });
 
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('DUPLICATE_ENTRY');
@@ -92,11 +99,14 @@ describe('leagues API', () => {
     expect(missingAgain.status).toBe(404);
     expect(missingAgain.headers['x-cache']).toBe('MISS');
 
-    await request(app).post('/api/v1/leagues').send({
-      name: 'Serie A',
-      country: 'Italy',
-      season: '2025/2026',
-    });
+    await request(app)
+      .post('/api/v1/leagues')
+      .set(await apiKeyHeader())
+      .send({
+        name: 'Serie A',
+        country: 'Italy',
+        season: '2025/2026',
+      });
     const afterWrite = await request(app).get('/api/v1/leagues');
     expect(afterWrite.headers['x-cache']).toBe('MISS');
     expect(afterWrite.body.data).toHaveLength(1);
@@ -104,8 +114,12 @@ describe('leagues API', () => {
   });
 
   it('returns 404 when updating or deleting a missing league', async () => {
-    const updated = await request(app).put(`/api/v1/leagues/${MISSING_ID}`).send({ name: 'Nope' });
-    const removed = await request(app).delete(`/api/v1/leagues/${MISSING_ID}`);
+    const auth = await apiKeyHeader();
+    const updated = await request(app)
+      .put(`/api/v1/leagues/${MISSING_ID}`)
+      .set(auth)
+      .send({ name: 'Nope' });
+    const removed = await request(app).delete(`/api/v1/leagues/${MISSING_ID}`).set(auth);
 
     expect(updated.status).toBe(404);
     expect(removed.status).toBe(404);
