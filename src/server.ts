@@ -32,7 +32,7 @@ const server = app.listen(config.PORT, () => {
   initializeSocket(server);
 
   // Start BullMQ workers after the server is ready
-  initializeWorkers().catch((err) => {
+  initializeWorkers().catch((err: unknown) => {
     logger.error({ err }, 'Failed to initialize BullMQ workers');
   });
 });
@@ -68,7 +68,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
     // 1.5. Disconnect Real-time Push Layer
     try {
-      getSocketIO().close();
+      await getSocketIO().close();
       logger.info('Socket.io server closed');
     } catch {
       // Socket might not be initialized if startup failed early

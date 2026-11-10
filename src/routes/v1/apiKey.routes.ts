@@ -15,8 +15,14 @@ import { strictRateLimiter } from '../../middleware/rateLimiter.js';
  */
 const router = Router();
 
-router.post('/', strictRateLimiter, apiKeyController.create);
-router.get('/', apiKeyController.list);
-router.patch('/:id/revoke', apiKeyController.revoke);
+router.post('/', strictRateLimiter, (req, res, next) => {
+  apiKeyController.create(req, res, next).catch(next);
+});
+router.get('/', (req, res, next) => {
+  apiKeyController.list(req, res, next).catch(next);
+});
+router.patch('/:id/revoke', (req, res, next) => {
+  apiKeyController.revoke(req, res, next).catch(next);
+});
 
 export { router as apiKeyRouter };

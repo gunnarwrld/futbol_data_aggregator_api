@@ -10,7 +10,7 @@ import { type ApiFootballFixture, type ApiFootballFixtureEvent } from '../types/
  */
 const EVENT_TYPE_MAP: Record<string, string> = {
   Goal: 'GOAL',
-  Card: 'CARD',        // Further refined by detail (Yellow/Red)
+  Card: 'CARD', // Further refined by detail (Yellow/Red)
   subst: 'SUBSTITUTION',
   Var: 'VAR',
 };
@@ -110,15 +110,15 @@ export const syncLiveMatchesService = {
               awayScore: newAwayScore,
               status: 'LIVE',
             };
-            
+
             // Broadcast to specific match room
             io.to(`match:${updatedMatch.id}`).emit('match:update', payload);
             // Broadcast to global live matches room
             io.to('live-matches').emit('match:update', payload);
-            
+
             logger.debug({ matchId: updatedMatch.id }, 'Broadcasted score update via Socket.io');
-          } catch (err) {
-             logger.warn('Socket.io not initialized or failed to emit');
+          } catch {
+            logger.warn('Socket.io not initialized or failed to emit');
           }
         }
 
@@ -174,16 +174,16 @@ export const syncLiveMatchesService = {
                     minute: event.time.elapsed,
                   },
                 });
-                
+
                 // Broadcast new event
                 try {
                   const io = getSocketIO();
                   io.to(`match:${existingMatch.id}`).emit('match:event', newMatchEvent);
                   io.to('live-matches').emit('match:event', newMatchEvent);
-                } catch (err) {
+                } catch {
                   logger.warn('Socket.io not initialized or failed to emit');
                 }
-                
+
                 events++;
               }
             } catch (err) {
@@ -202,10 +202,7 @@ export const syncLiveMatchesService = {
           errors++;
         }
       } catch (err) {
-        logger.error(
-          { err, fixtureId: item.fixture.id },
-          'Failed to sync live fixture',
-        );
+        logger.error({ err, fixtureId: item.fixture.id }, 'Failed to sync live fixture');
         errors++;
       }
     }

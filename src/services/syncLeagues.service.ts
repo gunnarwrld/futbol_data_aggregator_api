@@ -57,10 +57,7 @@ export const syncLeaguesService = {
     // Invalidate league cache after successful sync
     await invalidateCache('leagues:*');
 
-    logger.info(
-      { total: leagues.length, synced, errors },
-      'League sync completed',
-    );
+    logger.info({ total: leagues.length, synced, errors }, 'League sync completed');
 
     return { synced, errors };
   },

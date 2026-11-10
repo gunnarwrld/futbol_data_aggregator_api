@@ -6,21 +6,20 @@ import { invalidateCache } from '../middleware/cache.js';
 
 export const matchController = {
   findAll: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const page = Number(req.query['page']) || 1;
-    const limit = Math.min(Number(req.query['limit']) || 20, 100);
-    const sortBy = (req.query['sortBy'] as string) || 'matchDate';
-    const sortOrder = (req.query['sortOrder'] as 'asc' | 'desc') || 'desc';
+    const page = Number(req.query.page) || 1;
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const sortBy = (req.query.sortBy as string) || 'matchDate';
+    const requestedOrder = req.query.sortOrder;
+    const sortOrder = (
+      requestedOrder === undefined || requestedOrder === '' ? 'desc' : requestedOrder
+    ) as 'asc' | 'desc';
 
     const filters = {
-      leagueId: req.query['leagueId'] as string | undefined,
-      teamId: req.query['teamId'] as string | undefined,
-      status: req.query['status'] as string | undefined,
-      startDate: req.query['startDate']
-        ? new Date(req.query['startDate'] as string)
-        : undefined,
-      endDate: req.query['endDate']
-        ? new Date(req.query['endDate'] as string)
-        : undefined,
+      leagueId: req.query.leagueId as string | undefined,
+      teamId: req.query.teamId as string | undefined,
+      status: req.query.status as string | undefined,
+      startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
+      endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
     };
 
     const result = await matchService.findAll({ page, limit, sortBy, sortOrder }, filters);
@@ -39,7 +38,7 @@ export const matchController = {
   }),
 
   findById: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = req.params['id'] as string;
+    const id = req.params.id as string;
     const match = await matchService.findById(id);
     apiResponse.success(res, 200, match);
   }),
@@ -51,14 +50,17 @@ export const matchController = {
   }),
 
   update: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = req.params['id'] as string;
-    const match = await matchService.update(id, req.body as Parameters<typeof matchService.update>[1]);
+    const id = req.params.id as string;
+    const match = await matchService.update(
+      id,
+      req.body as Parameters<typeof matchService.update>[1],
+    );
     await invalidateCache('matches:*');
     apiResponse.success(res, 200, match);
   }),
 
   delete: catchAsync(async (req: Request, res: Response): Promise<void> => {
-    const id = req.params['id'] as string;
+    const id = req.params.id as string;
     await matchService.delete(id);
     await invalidateCache('matches:*');
     apiResponse.noContent(res);

@@ -23,6 +23,8 @@ export const apiResponse = {
   /**
    * Send a success response with data.
    */
+  // T types the payload. The helper sends it and returns void.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
   success<T>(res: Response, statusCode: number, data: T, meta?: PaginationMeta): void {
     const response: ApiSuccessResponse<T> = {
       success: true,
@@ -36,6 +38,7 @@ export const apiResponse = {
   /**
    * Send a paginated success response.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
   paginated<T>(res: Response, data: T[], meta: PaginationMeta): void {
     apiResponse.success(res, 200, data, meta);
   },
@@ -43,6 +46,7 @@ export const apiResponse = {
   /**
    * Send a 201 Created response.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
   created<T>(res: Response, data: T): void {
     apiResponse.success(res, 201, data);
   },

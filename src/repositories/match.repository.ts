@@ -19,16 +19,13 @@ export const matchRepository = {
     if (filters?.status) where.status = filters.status;
 
     if (filters?.teamId) {
-      where.OR = [
-        { homeTeamId: filters.teamId },
-        { awayTeamId: filters.teamId },
-      ];
+      where.OR = [{ homeTeamId: filters.teamId }, { awayTeamId: filters.teamId }];
     }
 
     if (filters?.startDate || filters?.endDate) {
       where.matchDate = {};
-      if (filters?.startDate) where.matchDate.gte = filters.startDate;
-      if (filters?.endDate) where.matchDate.lte = filters.endDate;
+      if (filters.startDate) where.matchDate.gte = filters.startDate;
+      if (filters.endDate) where.matchDate.lte = filters.endDate;
     }
 
     const [data, total] = await Promise.all([
@@ -99,10 +96,7 @@ export const matchRepository = {
     return prisma.match.update({ where: { id }, data });
   },
 
-  async upsertByExternalId(
-    externalId: number,
-    data: Prisma.MatchCreateInput,
-  ): Promise<Match> {
+  async upsertByExternalId(externalId: number, data: Prisma.MatchCreateInput): Promise<Match> {
     return prisma.match.upsert({
       where: { externalId },
       create: data,

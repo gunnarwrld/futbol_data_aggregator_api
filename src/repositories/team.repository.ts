@@ -52,10 +52,7 @@ export const teamRepository = {
     return prisma.team.update({ where: { id }, data });
   },
 
-  async upsertByExternalId(
-    externalId: number,
-    data: Prisma.TeamCreateInput,
-  ): Promise<Team> {
+  async upsertByExternalId(externalId: number, data: Prisma.TeamCreateInput): Promise<Team> {
     return prisma.team.upsert({
       where: { externalId },
       create: data,

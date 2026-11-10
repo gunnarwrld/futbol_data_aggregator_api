@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { type Request, type Response, type NextFunction } from 'express';
+import { type Response } from 'express';
 import { apiResponse } from '../../src/utils/apiResponse.js';
 
 describe('apiResponse', () => {
