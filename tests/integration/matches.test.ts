@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { prisma } from '../../src/config/database.js';
 import { app } from '../../src/app.js';
-import { createLeague, createMatch, createTeam } from './fixtures.js';
+import { apiKeyHeader, createLeague, createMatch, createTeam } from './fixtures.js';
 
 async function seedMatch(status: string, minute?: number) {
   const league = await createLeague();
@@ -96,7 +96,8 @@ describe('matches API', () => {
     const home = await createTeam({ name: 'Home', shortName: 'HOM' });
     const away = await createTeam({ name: 'Away', shortName: 'AWY' });
 
-    const created = await request(app).post('/api/v1/matches').send({
+    const auth = await apiKeyHeader();
+    const created = await request(app).post('/api/v1/matches').set(auth).send({
       leagueId: league.id,
       homeTeamId: home.id,
       awayTeamId: away.id,
@@ -106,13 +107,13 @@ describe('matches API', () => {
     expect(created.status).toBe(201);
     const id = created.body.data.id as string;
 
-    const updated = await request(app).put(`/api/v1/matches/${id}`).send({
+    const updated = await request(app).put(`/api/v1/matches/${id}`).set(auth).send({
       status: 'LIVE',
       homeScore: 1,
     });
     expect(updated.status).toBe(200);
     expect(updated.body.data).toEqual(expect.objectContaining({ status: 'LIVE', homeScore: 1 }));
 
-    expect((await request(app).delete(`/api/v1/matches/${id}`)).status).toBe(204);
+    expect((await request(app).delete(`/api/v1/matches/${id}`).set(auth)).status).toBe(204);
   });
 });

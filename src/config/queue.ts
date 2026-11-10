@@ -41,25 +41,42 @@ const defaultJobOptions: QueueOptions['defaultJobOptions'] = {
 
 /* ── Queue Instances ────────────────────────────────────── */
 
-export const syncLeaguesQueue = new Queue('sync-leagues', {
-  connection,
-  defaultJobOptions,
-});
+function watchQueue(queue: Queue): Queue {
+  // BullMQ re-emits ioredis errors. With no listener, Node treats that as an
+  // uncaught exception and the HTTP server shuts down while Redis is asleep.
+  queue.on('error', (err: Error) => {
+    logger.error({ err, queue: queue.name }, 'BullMQ queue connection error');
+  });
+  return queue;
+}
 
-export const syncTeamsQueue = new Queue('sync-teams', {
-  connection,
-  defaultJobOptions,
-});
+export const syncLeaguesQueue = watchQueue(
+  new Queue('sync-leagues', {
+    connection,
+    defaultJobOptions,
+  }),
+);
 
-export const syncMatchesQueue = new Queue('sync-matches', {
-  connection,
-  defaultJobOptions,
-});
+export const syncTeamsQueue = watchQueue(
+  new Queue('sync-teams', {
+    connection,
+    defaultJobOptions,
+  }),
+);
 
-export const syncLiveMatchesQueue = new Queue('sync-live-matches', {
-  connection,
-  defaultJobOptions,
-});
+export const syncMatchesQueue = watchQueue(
+  new Queue('sync-matches', {
+    connection,
+    defaultJobOptions,
+  }),
+);
+
+export const syncLiveMatchesQueue = watchQueue(
+  new Queue('sync-live-matches', {
+    connection,
+    defaultJobOptions,
+  }),
+);
 
 /* ── Worker Factory ─────────────────────────────────────── */
 

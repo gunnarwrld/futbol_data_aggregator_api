@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { apiKeyController } from '../../controllers/apiKey.controller.js';
+import { requireApiKey } from '../../middleware/requireApiKey.js';
 import { strictRateLimiter } from '../../middleware/rateLimiter.js';
 
 /**
  * API Key Management Routes.
  *
- * These endpoints allow consumers to provision and manage their API keys.
- * Key creation is protected by the strict rate limiter to prevent abuse.
+ * Listing, creating, and revoking keys requires an existing valid API key.
+ * Key creation is also protected by the strict rate limiter.
+ * Mint the first key with `npm run admin:create-key`.
  *
  * Routes:
  * - POST   /api/v1/api-keys          → Generate a new API key
@@ -15,13 +17,13 @@ import { strictRateLimiter } from '../../middleware/rateLimiter.js';
  */
 const router = Router();
 
-router.post('/', strictRateLimiter, (req, res, next) => {
+router.post('/', requireApiKey, strictRateLimiter, (req, res, next) => {
   apiKeyController.create(req, res, next).catch(next);
 });
-router.get('/', (req, res, next) => {
+router.get('/', requireApiKey, (req, res, next) => {
   apiKeyController.list(req, res, next).catch(next);
 });
-router.patch('/:id/revoke', (req, res, next) => {
+router.patch('/:id/revoke', requireApiKey, (req, res, next) => {
   apiKeyController.revoke(req, res, next).catch(next);
 });
 

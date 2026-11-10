@@ -34,8 +34,8 @@ declare global {
  * - If a VALID key is provided → `req.apiKey` is populated
  *   (rate limited at the key's configured limit, default 1000 req/hr)
  *
- * This is NOT a gate — unauthenticated requests are allowed through.
- * The rate limiter downstream uses `req.apiKey` to decide the tier.
+ * Public reads stay anonymous. `requireApiKey` is what rejects a missing key
+ * on writes and on key administration.
  */
 export async function authenticateApiKey(
   req: Request,

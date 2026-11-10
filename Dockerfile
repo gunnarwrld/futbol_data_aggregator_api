@@ -8,6 +8,7 @@ RUN apt-get update \
 
 FROM base AS deps
 COPY package.json package-lock.json ./
+COPY scripts/patch-prisma-migrate-exit.mjs ./scripts/patch-prisma-migrate-exit.mjs
 RUN npm ci
 
 FROM base AS build
@@ -28,8 +29,11 @@ RUN npm ci --omit=dev --ignore-scripts \
   && npm install --no-save --omit=dev prisma@7.8.0
 COPY prisma ./prisma
 COPY prisma.config.ts ./
+COPY scripts/patch-prisma-migrate-exit.mjs ./scripts/patch-prisma-migrate-exit.mjs
 ENV DATABASE_URL=postgresql://futbol:futbol@localhost:5432/futbol_data
-RUN npx prisma generate
+# `npm ci --ignore-scripts` skipped the CLI exit patch. Apply it before migrate.
+RUN npx prisma generate \
+  && node scripts/patch-prisma-migrate-exit.mjs --required
 COPY --from=build /app/dist ./dist
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh \

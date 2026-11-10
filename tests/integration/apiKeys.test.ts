@@ -4,10 +4,12 @@ import { redis } from '../../src/config/redis.js';
 import { prisma } from '../../src/config/database.js';
 import { app } from '../../src/app.js';
 import { apiKeyService } from '../../src/services/apiKey.service.js';
+import { apiKeyHeader } from './fixtures.js';
 
 describe('API keys', () => {
   it('creates a key once, lists it without the secret, and revokes it', async () => {
-    const created = await request(app).post('/api/v1/api-keys').send({
+    const auth = await apiKeyHeader('Bootstrap');
+    const created = await request(app).post('/api/v1/api-keys').set(auth).send({
       name: 'Mobile App',
       tier: 'standard',
     });
@@ -20,7 +22,7 @@ describe('API keys', () => {
     const rawKey = created.body.data.rawKey as string;
     const id = created.body.data.apiKey.id as string;
 
-    const listed = await request(app).get('/api/v1/api-keys');
+    const listed = await request(app).get('/api/v1/api-keys').set(auth);
     expect(listed.status).toBe(200);
     expect(listed.body.data[0].hashedKey).toBeUndefined();
     expect(JSON.stringify(listed.body)).not.toContain(rawKey);
@@ -33,7 +35,7 @@ describe('API keys', () => {
       expect(row.lastUsedAt).not.toBeNull();
     });
 
-    const revoked = await request(app).patch(`/api/v1/api-keys/${id}/revoke`);
+    const revoked = await request(app).patch(`/api/v1/api-keys/${id}/revoke`).set(auth);
     expect(revoked.status).toBe(200);
     expect(revoked.body.data.isActive).toBe(false);
 
@@ -43,18 +45,21 @@ describe('API keys', () => {
   });
 
   it('requires a name and stores premium and custom limits', async () => {
-    const missing = await request(app).post('/api/v1/api-keys').send({ tier: 'premium' });
+    const auth = await apiKeyHeader('Bootstrap');
+    const missing = await request(app).post('/api/v1/api-keys').set(auth).send({ tier: 'premium' });
     expect(missing.status).toBe(400);
     expect(missing.body.error.code).toBe('BAD_REQUEST');
 
     const premium = await request(app)
       .post('/api/v1/api-keys')
+      .set(auth)
       .send({ name: 'Premium', tier: 'premium' });
     expect(premium.status).toBe(201);
     expect(premium.body.data.apiKey.rateLimit).toBe(5000);
 
     const custom = await request(app)
       .post('/api/v1/api-keys')
+      .set(auth)
       .send({ name: 'Custom', tier: 'standard', rateLimit: 25 });
     expect(custom.body.data.apiKey.rateLimit).toBe(25);
   });
