@@ -1,20 +1,15 @@
-import {
-  Queue,
-  Worker,
-  type ConnectionOptions,
-  type Job,
-  type QueueOptions,
-  type WorkerOptions,
-} from 'bullmq';
+import { Queue, Worker, type Job, type WorkerOptions, type QueueOptions } from 'bullmq';
 import { config } from './index.js';
 import { logger } from './logger.js';
+import { bullmqConnectionOptions } from './redisConnection.js';
 
 /**
  * BullMQ connection configuration.
  *
- * Shares the same Redis instance used for caching,
- * but BullMQ manages its own connection pool internally.
- * This prevents blocking the cache client during heavy job processing.
+ * Uses the full REDIS_URL — host, port, username, password, database index,
+ * and rediss:// TLS — the same material the cache client passes to ioredis.
+ * BullMQ copies this options object into its own client for each Queue and
+ * Worker, with maxRetriesPerRequest left null for blocking commands.
  *
  * Why BullMQ over node-cron?
  * ─────────────────────────
@@ -23,11 +18,7 @@ import { logger } from './logger.js';
  * even with 10 servers running, the API-Football fetch happens exactly ONCE
  * per interval. This protects rate limits and prevents database collisions.
  */
-const connection: ConnectionOptions = {
-  host: new URL(config.REDIS_URL).hostname,
-  port: Number(new URL(config.REDIS_URL).port) || 6379,
-  maxRetriesPerRequest: null, // Required by BullMQ — disables ioredis retry limit
-};
+const connection = bullmqConnectionOptions(config.REDIS_URL);
 
 /**
  * Default job options applied to all queues.
