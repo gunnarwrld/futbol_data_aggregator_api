@@ -3,6 +3,7 @@ import { prisma } from '../../src/config/database.js';
 import { getSocketIO } from '../../src/config/socket.js';
 import { apiFootball } from '../../src/integrations/apiFootball.js';
 import { invalidateCache } from '../../src/middleware/cache.js';
+import { livePollGate } from '../../src/services/livePollGate.js';
 import { syncLiveMatchesService } from '../../src/services/syncLiveMatches.service.js';
 
 const emit = vi.fn();
@@ -10,7 +11,13 @@ const to = vi.fn(() => ({ emit }));
 
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
-    match: { findUnique: vi.fn(), update: vi.fn() },
+    league: { findMany: vi.fn() },
+    match: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+      updateMany: vi.fn(),
+    },
     team: { findUnique: vi.fn() },
     player: { findUnique: vi.fn() },
     matchEvent: { findFirst: vi.fn(), create: vi.fn() },
@@ -20,6 +27,7 @@ vi.mock('../../src/config/database.js', () => ({
 
 vi.mock('../../src/integrations/apiFootball.js', () => ({
   apiFootball: { get: vi.fn() },
+  isApiFootballAuthOrQuotaError: () => false,
 }));
 
 vi.mock('../../src/middleware/cache.js', () => ({
@@ -42,7 +50,7 @@ function liveFixture(id: number, home: number | null, away: number | null) {
       status: { long: 'First Half', short: '1H', elapsed: 30 },
     },
     league: {
-      id: 94,
+      id: 39,
       name: 'Liga',
       country: 'Portugal',
       logo: '',
@@ -71,7 +79,11 @@ function event(type: string, detail: string, minute: number, playerId: number | 
 
 describe('syncLiveMatchesService', () => {
   beforeEach(() => {
+    livePollGate.clear();
     vi.clearAllMocks();
+    vi.mocked(prisma.league.findMany).mockResolvedValue([{ id: 'league-1' }] as never);
+    vi.mocked(prisma.match.findFirst).mockResolvedValue({ id: 'candidate' } as never);
+    vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 0 });
     to.mockReturnValue({ emit });
     vi.mocked(getSocketIO).mockReturnValue({ to } as never);
     vi.mocked(invalidateCache).mockResolvedValue();
@@ -102,6 +114,7 @@ describe('syncLiveMatchesService', () => {
       updated: 0,
       events: 0,
       errors: 0,
+      skipped: false,
     });
     expect(invalidateCache).not.toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalled();
@@ -117,6 +130,7 @@ describe('syncLiveMatchesService', () => {
       updated: 0,
       events: 0,
       errors: 0,
+      skipped: false,
     });
     expect(prisma.match.update).not.toHaveBeenCalled();
     expect(invalidateCache).toHaveBeenCalledWith('matches:*');
@@ -158,7 +172,7 @@ describe('syncLiveMatchesService', () => {
 
     const result = await syncLiveMatchesService.syncLive();
 
-    expect(result).toEqual({ updated: 1, events: 6, errors: 0 });
+    expect(result).toEqual({ updated: 1, events: 6, errors: 0, skipped: false });
     expect(prisma.match.update).toHaveBeenCalledWith({
       where: { id: 'match-1' },
       data: { status: 'LIVE', homeScore: 1, awayScore: 0 },
@@ -287,6 +301,7 @@ describe('syncLiveMatchesService', () => {
       updated: 0,
       events: 0,
       errors: 1,
+      skipped: false,
     });
   });
 });
