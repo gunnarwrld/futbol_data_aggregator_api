@@ -3,11 +3,35 @@ import { redis } from '../config/redis.js';
 import { logger } from '../config/logger.js';
 
 /**
+ * A body is an error envelope when the API reports failure.
+ * Those must never be stored: the cache only keeps the JSON body, so a
+ * cached 500 would later be replayed with Express's default status 200.
+ */
+export function isErrorResponseBody(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+
+  const record = body as { success?: unknown; error?: unknown };
+  if (record.success === false) return true;
+
+  return 'error' in record && record.error != null && typeof record.error === 'object';
+}
+
+/**
+ * Only 2xx payloads that are not error envelopes are safe to store.
+ */
+export function shouldStoreResponse(statusCode: number, body: unknown): boolean {
+  return statusCode >= 200 && statusCode < 300 && !isErrorResponseBody(body);
+}
+
+/**
  * Redis cache middleware factory.
  *
  * Intercepts GET requests and checks Redis for a cached response.
  * If found, returns the cached data immediately. If not, the response
  * is intercepted and stored in Redis for subsequent requests.
+ *
+ * Error responses are not stored. A previously stored error envelope is
+ * deleted and treated as a miss so visitors never receive it as HTTP 200.
  *
  * @param ttlSeconds - Time-to-live for cached entries in seconds (default: 300 = 5 minutes)
  * @param keyPrefix - Prefix for cache keys to namespace by resource type
@@ -35,11 +59,17 @@ export const cacheMiddleware = (ttlSeconds = 300, keyPrefix = 'cache') => {
       const cached = await redis.get(cacheKey);
 
       if (cached) {
-        logger.debug({ cacheKey }, 'Cache HIT');
         const parsed: unknown = JSON.parse(cached);
-        res.setHeader('X-Cache', 'HIT');
-        res.json(parsed);
-        return;
+
+        if (!isErrorResponseBody(parsed)) {
+          logger.debug({ cacheKey }, 'Cache HIT');
+          res.setHeader('X-Cache', 'HIT');
+          res.json(parsed);
+          return;
+        }
+
+        logger.warn({ cacheKey }, 'Discarding cached error response');
+        await redis.del(cacheKey);
       }
 
       logger.debug({ cacheKey }, 'Cache MISS');
@@ -48,15 +78,15 @@ export const cacheMiddleware = (ttlSeconds = 300, keyPrefix = 'cache') => {
       // Intercept the response to cache it. Error payloads are not stored:
       // a cached 404 would keep hiding a record after it is created.
       const originalJson = res.json.bind(res);
-      res.json = (body: unknown) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
+      res.json = ((body: unknown) => {
+        if (shouldStoreResponse(res.statusCode, body)) {
           redis.setex(cacheKey, ttlSeconds, JSON.stringify(body)).catch((err: unknown) => {
             logger.error({ err, cacheKey }, 'Failed to write to cache');
           });
         }
 
         return originalJson(body);
-      };
+      }) as Response['json'];
 
       next();
     } catch (err) {

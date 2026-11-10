@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { syncLeagueIdsSchema } from './syncLeagueIds.js';
 
 dotenv.config();
 
@@ -21,6 +22,12 @@ const envSchema = z.object({
   /* ── API-Football ──────────────────────────────────────── */
   API_FOOTBALL_KEY: z.string().min(1),
   API_FOOTBALL_BASE_URL: z.url().default('https://v3.football.api-sports.io'),
+
+  /**
+   * API-Football league IDs to sync. Comma-separated. Empty syncs nothing.
+   * Default is Premier League (39), La Liga (140), and the Champions League (2).
+   */
+  SYNC_LEAGUE_IDS: syncLeagueIdsSchema,
 
   /* ── Rate Limiting ─────────────────────────────────────── */
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),

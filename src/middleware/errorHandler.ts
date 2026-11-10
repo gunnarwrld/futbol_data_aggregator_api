@@ -1,5 +1,6 @@
 import { type Request, type Response, type NextFunction } from 'express';
 import { AppError } from '../utils/AppError.js';
+import { isTransientDatabaseError } from '../utils/databaseErrors.js';
 import { logger } from '../config/logger.js';
 import { config } from '../config/index.js';
 import { type ApiErrorResponse } from '../types/index.js';
@@ -45,6 +46,24 @@ export const errorHandler = (
     }
 
     res.status(err.statusCode).json(response);
+    return;
+  }
+
+  /* ── Transient database failures (wake-up, timeout) ──── */
+  if (isTransientDatabaseError(err)) {
+    logger.warn({ err }, 'Transient database error');
+
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        message: 'Database is temporarily unavailable. Retry shortly.',
+        code: 'DATABASE_UNAVAILABLE',
+        statusCode: 503,
+      },
+    };
+
+    res.setHeader('Retry-After', '5');
+    res.status(503).json(response);
     return;
   }
 

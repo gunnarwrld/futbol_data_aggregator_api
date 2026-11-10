@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type NextFunction, type Request, type Response } from 'express';
 import { redis } from '../../src/config/redis.js';
-import { cacheMiddleware, invalidateCache } from '../../src/middleware/cache.js';
+import {
+  cacheMiddleware,
+  invalidateCache,
+  isErrorResponseBody,
+  shouldStoreResponse,
+} from '../../src/middleware/cache.js';
 
 vi.mock('../../src/config/redis.js', () => ({
   redis: {
@@ -165,5 +170,25 @@ describe('invalidateCache', () => {
     keys.mockRejectedValue(new Error('scan failed'));
 
     await expect(invalidateCache('leagues:*')).resolves.toBeUndefined();
+  });
+});
+
+describe('cache response predicates', () => {
+  const databaseError = {
+    success: false,
+    error: { message: 'Database error', code: 'DATABASE_ERROR', statusCode: 500 },
+  };
+
+  it('treats a DATABASE_ERROR envelope as an error body', () => {
+    expect(isErrorResponseBody(databaseError)).toBe(true);
+    expect(shouldStoreResponse(200, databaseError)).toBe(false);
+    expect(shouldStoreResponse(500, databaseError)).toBe(false);
+  });
+
+  it('stores a 2xx success envelope and skips other statuses', () => {
+    const body = { success: true, data: [] };
+    expect(shouldStoreResponse(200, body)).toBe(true);
+    expect(shouldStoreResponse(201, body)).toBe(true);
+    expect(shouldStoreResponse(503, body)).toBe(false);
   });
 });

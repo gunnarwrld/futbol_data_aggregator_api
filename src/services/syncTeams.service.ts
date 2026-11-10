@@ -1,6 +1,7 @@
-import { apiFootball } from '../integrations/apiFootball.js';
+import { apiFootball, isApiFootballAuthOrQuotaError } from '../integrations/apiFootball.js';
 import { teamRepository } from '../repositories/team.repository.js';
 import { invalidateCache } from '../middleware/cache.js';
+import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
 import { prisma } from '../config/database.js';
 import { type ApiFootballTeam } from '../types/index.js';
@@ -8,25 +9,33 @@ import { type ApiFootballTeam } from '../types/index.js';
 /**
  * Team Sync Service.
  *
- * Fetches teams for each league from API-Football and upserts them into PostgreSQL.
- * Iterates over all leagues in the database that have an `externalId`,
- * so leagues must be synced first.
+ * Fetches teams for each watched league from API-Football and upserts them
+ * into PostgreSQL. Only leagues whose `externalId` is in `SYNC_LEAGUE_IDS`
+ * are queried, so a database full of other competitions is not walked.
+ * Leagues must be synced first. An empty `SYNC_LEAGUE_IDS` makes no requests.
+ * A 403 or 429 stops the loop.
  *
  * API-Football endpoint: GET /teams?league={id}&season={year}
  * Schedule: Every 24 hours
  */
 export const syncTeamsService = {
   /**
-   * Sync teams for all tracked leagues from API-Football.
+   * Sync teams for watched leagues from API-Football.
    *
    * @returns Summary of sync results
    */
   async syncAll(): Promise<{ synced: number; errors: number }> {
-    logger.info('Starting team sync from API-Football');
+    const leagueIds = config.SYNC_LEAGUE_IDS;
 
-    // Fetch all leagues that have been synced from API-Football
+    if (leagueIds.length === 0) {
+      logger.info('Skipping team sync — SYNC_LEAGUE_IDS is empty');
+      return { synced: 0, errors: 0 };
+    }
+
+    logger.info({ leagueIds }, 'Starting team sync from API-Football');
+
     const leagues = await prisma.league.findMany({
-      where: { externalId: { not: null } },
+      where: { externalId: { in: leagueIds } },
       select: { externalId: true, season: true },
     });
 
@@ -69,6 +78,11 @@ export const syncTeamsService = {
           'Failed to fetch teams for league',
         );
         errors++;
+
+        if (isApiFootballAuthOrQuotaError(err)) {
+          logger.error('Stopping team sync — API-Football returned 403 or 429');
+          break;
+        }
       }
     }
 
