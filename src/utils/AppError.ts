@@ -18,12 +18,7 @@ export class AppError extends Error {
   public readonly isOperational: boolean;
   public readonly details?: unknown;
 
-  constructor(
-    message: string,
-    statusCode: number,
-    code: string,
-    details?: unknown,
-  ) {
+  constructor(message: string, statusCode: number, code: string, details?: unknown) {
     super(message);
 
     this.statusCode = statusCode;
@@ -63,9 +58,7 @@ export class AppError extends Error {
    * Factory: 404 Not Found
    */
   static notFound(resource: string, id?: string | number): AppError {
-    const message = id
-      ? `${resource} with id '${String(id)}' not found`
-      : `${resource} not found`;
+    const message = id ? `${resource} with id '${String(id)}' not found` : `${resource} not found`;
     return new AppError(message, 404, 'NOT_FOUND');
   }
 
@@ -100,9 +93,7 @@ export class AppError extends Error {
   /**
    * Factory: 503 Service Unavailable
    */
-  static serviceUnavailable(
-    message = 'Service temporarily unavailable',
-  ): AppError {
+  static serviceUnavailable(message = 'Service temporarily unavailable'): AppError {
     return new AppError(message, 503, 'SERVICE_UNAVAILABLE');
   }
 }

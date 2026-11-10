@@ -6,6 +6,8 @@ import { logger } from '../config/logger.js';
  * Augment Express Request to carry the authenticated API key context.
  */
 declare global {
+  // Express augments its Request type through namespace merging.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       apiKey?: {
@@ -71,10 +73,7 @@ export async function authenticateApiKey(
       rateLimit: apiKey.rateLimit,
     };
 
-    logger.debug(
-      { apiKeyId: apiKey.id, tier: apiKey.tier },
-      'API key authenticated',
-    );
+    logger.debug({ apiKeyId: apiKey.id, tier: apiKey.tier }, 'API key authenticated');
 
     next();
   } catch (err) {

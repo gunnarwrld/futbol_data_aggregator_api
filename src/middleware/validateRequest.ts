@@ -1,5 +1,5 @@
 import { type Request, type Response, type NextFunction } from 'express';
-import { type ZodSchema, ZodError } from 'zod';
+import { ZodError, type ZodType } from 'zod';
 import { AppError } from '../utils/AppError.js';
 
 /**
@@ -29,10 +29,7 @@ type ValidationTarget = 'body' | 'query' | 'params';
  * );
  * ```
  */
-export const validateRequest = (
-  target: ValidationTarget,
-  schema: ZodSchema,
-) => {
+export const validateRequest = (target: ValidationTarget, schema: ZodType) => {
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
       const parsed = schema.parse(req[target]);
@@ -44,10 +41,10 @@ export const validateRequest = (
       next();
     } catch (error) {
       if (error instanceof ZodError) {
+        // Clients receive flattened field errors. treeifyError() is a different shape.
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
         const details = error.flatten().fieldErrors;
-        next(
-          AppError.badRequest('Validation failed', details),
-        );
+        next(AppError.badRequest('Validation failed', details));
         return;
       }
       next(error);

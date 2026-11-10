@@ -5,6 +5,7 @@
 **Live API:** [https://futboldataaggregatorapi-production.up.railway.app](https://futboldataaggregatorapi-production.up.railway.app)
 
 [![Live](https://img.shields.io/badge/Live-Railway-8B5CF6)](https://futboldataaggregatorapi-production.up.railway.app)
+[![CI](https://github.com/gunnarwrld/futbol_data_aggregator_api/actions/workflows/ci.yml/badge.svg)](https://github.com/gunnarwrld/futbol_data_aggregator_api/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-green?logo=node.js)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-5.2-black?logo=express)](https://expressjs.com/)
@@ -16,7 +17,7 @@
 [![Vitest](https://img.shields.io/badge/Vitest-4.1-6E9F18?logo=vitest)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-Badge versions are the floors of the ranges in `package.json` (`typescript` ^6.0.3, `express` ^5.2.1, `prisma` / `@prisma/client` / `@prisma/adapter-pg` ^7.8.0, `pg` ^8.21.0, `ioredis` ^5.11.0, `bullmq` ^5.77.6, `socket.io` ^4.8.3, `vitest` ^4.1.7). Node.js is `>=22.0.0` in `engines` and `22` in `.nvmrc`. PostgreSQL and Redis **server** versions are not pinned. Tests use Vitest only — Supertest is not a dependency. There is no GitHub Actions workflow, so there is no CI badge.
+Badge versions are the floors of the ranges in `package.json` (`typescript` ^6.0.3, `express` ^5.2.1, `prisma` / `@prisma/client` / `@prisma/adapter-pg` ^7.8.0, `pg` ^8.21.0, `ioredis` ^5.11.0, `bullmq` ^5.77.6, `socket.io` ^4.8.3, `vitest` ^4.1.7). Node.js is `>=22.0.0` in `engines` and `22` in `.nvmrc`. PostgreSQL and Redis **server** versions are not pinned. Vitest runs unit and integration tests; Supertest exercises HTTP endpoints. GitHub Actions checks lint, types, coverage tests, and the Docker image.
 
 ---
 
@@ -173,7 +174,7 @@ curl http://localhost:3000/api/v1/players
 npm test
 ```
 
-Vitest runs `tests/**/*.test.ts`. Today that is `tests/unit/AppError.test.ts` and `tests/unit/apiResponse.test.ts`. `tests/setup.ts` sets dummy `DATABASE_URL`, `REDIS_URL`, and `API_FOOTBALL_KEY` values; the unit tests do not open those connections, so Postgres and Redis do not need to be up. `tests/integration/` contains only `.gitkeep`.
+Vitest runs the unit and integration suites under `tests/`. Unit tests mock external services; integration tests exercise the HTTP API against PostgreSQL and Redis. `tests/setup.ts` supplies test environment values, and the integration setup prepares a disposable test database. Run `npm test` for the suites or `npm run test:coverage` for the CI coverage run; integration tests require PostgreSQL and Redis as configured in `vitest.config.ts`.
 
 The Husky `pre-commit` hook runs `npm test`. `commit-msg` runs Commitlint.
 
@@ -280,7 +281,7 @@ Pagination and sort apply to every list route (`/leagues`, `/teams`, `/matches`,
 | `npm run format:check` | Prettier check, no writes |
 | `npm test` | `vitest run` |
 | `npm run test:watch` | Vitest watch mode |
-| `npm run test:coverage` | Vitest with the v8 coverage provider. Thresholds in `vitest.config.ts` are 80% branches, functions, lines, and statements for `src/**/*.ts`. |
+| `npm run test:coverage` | Vitest with the v8 coverage provider. Thresholds in `vitest.config.ts` are 80% branches, 85% functions, and 90% lines and statements for `src/**/*.ts`. |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run validate` | `typecheck`, then `lint`, `format:check`, and `test` |
 | `npm run db:generate` | `prisma generate` |
@@ -310,7 +311,7 @@ Versions below are the ranges declared in `package.json`.
 | **Zod** ^4.4.3 | Environment validation at startup. Also imported by the unused `validateRequest` helper. |
 | **Helmet** ^8.2.0, **cors** ^2.8.6, **compression** ^1.8.1 | Security headers, CORS (`origin: true`), response compression |
 | **express-rate-limit** ^8.5.2 | In-memory limiter used only on `POST /api/v1/api-keys` (`strictRateLimiter`: 10 requests / 60 seconds). The exported global `rateLimiter` is not mounted. |
-| **Vitest** ^4.1.7 | Unit tests (`@vitest/coverage-v8` for coverage). No Supertest. |
+| **Vitest** ^4.1.7 + **Supertest** ^7.3.1 | Unit and HTTP integration tests (`@vitest/coverage-v8` for coverage) |
 | **Husky** ^9.1.7 + **Commitlint** ^21.0.2 | `pre-commit` runs `npm test`; `commit-msg` runs Commitlint |
 | **ESLint** ^10.4.1 + **typescript-eslint** ^8.60.0 | Flat config in `eslint.config.mjs` |
 | **Prettier** ^3.8.3 | Formatting |
