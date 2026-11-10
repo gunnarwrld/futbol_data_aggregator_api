@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { prisma } from '../../src/config/database.js';
 import { app } from '../../src/app.js';
-import { createPlayer, createTeam } from './fixtures.js';
+import { apiKeyHeader, createPlayer, createTeam } from './fixtures.js';
 
 describe('players API', () => {
   it('filters by team and position and includes the team on lookup', async () => {
@@ -29,7 +29,8 @@ describe('players API', () => {
 
   it('creates, updates, and deletes a player', async () => {
     const team = await createTeam();
-    const created = await request(app).post('/api/v1/players').send({
+    const auth = await apiKeyHeader();
+    const created = await request(app).post('/api/v1/players').set(auth).send({
       teamId: team.id,
       name: 'Pepe',
       position: 'Defender',
@@ -38,11 +39,14 @@ describe('players API', () => {
     expect(created.status).toBe(201);
     const id = created.body.data.id as string;
 
-    const updated = await request(app).put(`/api/v1/players/${id}`).send({ jerseyNumber: 33 });
+    const updated = await request(app)
+      .put(`/api/v1/players/${id}`)
+      .set(auth)
+      .send({ jerseyNumber: 33 });
     expect(updated.status).toBe(200);
     expect(updated.body.data.jerseyNumber).toBe(33);
 
-    expect((await request(app).delete(`/api/v1/players/${id}`)).status).toBe(204);
+    expect((await request(app).delete(`/api/v1/players/${id}`).set(auth)).status).toBe(204);
     expect((await request(app).get(`/api/v1/players/${id}`)).status).toBe(404);
   });
 });

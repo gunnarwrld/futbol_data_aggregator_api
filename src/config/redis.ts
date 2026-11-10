@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { config } from './index.js';
 import { logger } from './logger.js';
+import { cacheRedisOptions } from './redisOptions.js';
 
 /**
  * Redis client with automatic reconnection strategy and structured logging.
@@ -12,19 +13,7 @@ import { logger } from './logger.js';
  * - `close`: warn
  * - `reconnecting`: warn
  */
-export const redis = new Redis.default(config.REDIS_URL, {
-  maxRetriesPerRequest: 3,
-  retryStrategy(times: number): number | null {
-    if (times > 10) {
-      logger.error('Redis: max reconnection attempts exceeded');
-      return null; // Stop retrying
-    }
-    const delay = Math.min(times * 200, 5000);
-    logger.warn({ attempt: times, delayMs: delay }, 'Redis: reconnecting');
-    return delay;
-  },
-  lazyConnect: false,
-});
+export const redis = new Redis.default(config.REDIS_URL, cacheRedisOptions());
 
 redis.on('connect', () => {
   logger.info('Redis: connected');
@@ -46,6 +35,12 @@ redis.on('close', () => {
  * Gracefully disconnect Redis on shutdown.
  */
 export async function disconnectRedis(): Promise<void> {
-  await redis.quit();
+  // quit() connects first when the client is still lazy. A sleeping Redis
+  // would then stall shutdown. Drop the socket unless it is already usable.
+  if (redis.status === 'ready') {
+    await redis.quit();
+  } else {
+    redis.disconnect();
+  }
   logger.info('Redis connection closed');
 }

@@ -1,4 +1,10 @@
 import { prisma } from '../../src/config/database.js';
+import { apiKeyService } from '../../src/services/apiKey.service.js';
+
+export async function apiKeyHeader(name = 'Integration'): Promise<{ 'x-api-key': string }> {
+  const created = await apiKeyService.create({ name });
+  return { 'x-api-key': created.rawKey };
+}
 
 export async function createLeague(
   overrides: Partial<{

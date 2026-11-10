@@ -1,15 +1,9 @@
 import path from 'node:path';
 import { defineConfig } from 'prisma/config';
 
+const databaseUrl = process.env.DATABASE_URL;
+
 export default defineConfig({
-  earlyAccess: true,
   schema: path.join(import.meta.dirname, 'prisma/schema.prisma'),
-  datasource: {
-    url: process.env.DATABASE_URL as string,
-  },
-  migrate: {
-    async resolve() {
-      return { url: process.env.DATABASE_URL as string };
-    },
-  },
+  ...(databaseUrl ? { datasource: { url: databaseUrl } } : {}),
 });
