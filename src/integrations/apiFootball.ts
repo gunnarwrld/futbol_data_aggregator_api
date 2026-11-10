@@ -3,6 +3,30 @@ import { logger } from '../config/logger.js';
 import { type ApiFootballResponse } from '../types/index.js';
 
 /**
+ * HTTP failure from API-Football. `status` is the upstream status code.
+ */
+export class ApiFootballRequestError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+
+  constructor(status: number, statusText: string) {
+    super(`API-Football request failed: ${status} ${statusText}`);
+    this.name = 'ApiFootballRequestError';
+    this.status = status;
+    this.statusText = statusText;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * 403 (bad or disallowed key) and 429 (daily/minute quota) should stop a sync
+ * loop. Continuing would spend another request per remaining league.
+ */
+export function isApiFootballAuthOrQuotaError(err: unknown): boolean {
+  return err instanceof ApiFootballRequestError && (err.status === 403 || err.status === 429);
+}
+
+/**
  * API-Football reports failures either as a non-empty array or as an object
  * keyed by field. Empty arrays and empty objects are successful responses.
  */
@@ -76,7 +100,7 @@ export const apiFootball = {
         'API-Football request failed',
       );
 
-      throw new Error(`API-Football request failed: ${response.status} ${response.statusText}`);
+      throw new ApiFootballRequestError(response.status, response.statusText);
     }
 
     const data = (await response.json()) as ApiFootballResponse<T>;

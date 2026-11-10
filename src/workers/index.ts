@@ -31,7 +31,10 @@ const workers: Worker[] = [];
  * │ sync-leagues       │ 24 hours     │ Leagues rarely change mid-season      │
  * │ sync-teams         │ 24 hours     │ Rosters are mostly static             │
  * │ sync-matches       │ 6 hours      │ Catches newly scheduled fixtures      │
- * │ sync-live-matches  │ 60 seconds   │ Near real-time score updates          │
+ * │ sync-live-matches  │ 60 seconds   │ Near real-time scores. The service    │
+ * │                    │              │ skips API-Football when no leagues    │
+ * │                    │              │ are configured, nothing is live, or   │
+ * │                    │              │ a 403/429 backoff is open.            │
  *
  * BullMQ Distributed Lock Guarantee:
  * ──────────────────────────────────

@@ -1,9 +1,22 @@
-import { apiFootball } from '../integrations/apiFootball.js';
+import { apiFootball, isApiFootballAuthOrQuotaError } from '../integrations/apiFootball.js';
 import { invalidateCache } from '../middleware/cache.js';
+import { config } from '../config/index.js';
 import { logger } from '../config/logger.js';
 import { prisma } from '../config/database.js';
 import { getSocketIO } from '../config/socket.js';
-import { type ApiFootballFixture, type ApiFootballFixtureEvent } from '../types/index.js';
+import {
+  LIVE_EMPTY_CATALOG_BACKOFF_MS,
+  LIVE_IDLE_BACKOFF_MS,
+  LIVE_KICKOFF_LOOKAHEAD_MS,
+  LIVE_KICKOFF_LOOKBACK_MS,
+  LIVE_UPSTREAM_BACKOFF_MS,
+  livePollGate,
+} from './livePollGate.js';
+import {
+  type ApiFootballFixture,
+  type ApiFootballFixtureEvent,
+  type ApiFootballResponse,
+} from '../types/index.js';
 
 /**
  * Map API-Football event types to our schema event types.
@@ -33,35 +46,110 @@ function mapEventType(type: string, detail: string): string {
  * Fetches currently live fixtures from API-Football and updates
  * scores, statuses, and match events in real time.
  *
- * This is the most frequently executed sync job — runs every 60 seconds.
- * It only processes matches that are currently in progress, making it
- * lightweight and fast.
+ * The BullMQ scheduler ticks every 60 seconds. This method skips the
+ * API-Football request when:
+ * - `SYNC_LEAGUE_IDS` is empty
+ * - a backoff window is open (idle, empty database, or 403/429)
+ * - none of the watched leagues are stored yet
+ * - no watched match is `LIVE` or scheduled inside the kickoff window
+ *
+ * When a request is made, `live` is the watched ids joined with hyphens
+ * (`live=39-140-2`), not `live=all`.
  *
  * API-Football endpoints:
- * - GET /fixtures?live=all
+ * - GET /fixtures?live={id-id-id}
  * - GET /fixtures/events?fixture={id}
  *
- * Schedule: Every 60 seconds
+ * Schedule: Every 60 seconds, with the skips above
  */
+export interface LiveSyncResult {
+  updated: number;
+  events: number;
+  errors: number;
+  skipped: boolean;
+}
+
 export const syncLiveMatchesService = {
   /**
-   * Sync all currently live matches and their events.
+   * Sync currently live matches for watched leagues, and their events.
    *
-   * @returns Summary of sync results
+   * @returns Summary of sync results. `skipped` means no API-Football request was made.
    */
-  async syncLive(): Promise<{ updated: number; events: number; errors: number }> {
-    logger.info('Starting live match sync from API-Football');
+  async syncLive(): Promise<LiveSyncResult> {
+    const leagueIds = config.SYNC_LEAGUE_IDS;
 
-    const response = await apiFootball.get<ApiFootballFixture>('/fixtures', {
-      live: 'all',
+    if (leagueIds.length === 0) {
+      logger.info('Skipping live match sync — SYNC_LEAGUE_IDS is empty');
+      return { updated: 0, events: 0, errors: 0, skipped: true };
+    }
+
+    if (livePollGate.shouldSkip()) {
+      logger.debug('Skipping live match sync — backoff window');
+      return { updated: 0, events: 0, errors: 0, skipped: true };
+    }
+
+    const leagues = await prisma.league.findMany({
+      where: { externalId: { in: leagueIds } },
+      select: { id: true },
     });
 
-    const liveFixtures = response.response;
+    if (leagues.length === 0) {
+      livePollGate.backoff(LIVE_EMPTY_CATALOG_BACKOFF_MS);
+      logger.info('Skipping live match sync — watched leagues are not in the database');
+      return { updated: 0, events: 0, errors: 0, skipped: true };
+    }
+
+    const now = Date.now();
+    const candidate = await prisma.match.findFirst({
+      where: {
+        leagueId: { in: leagues.map((league) => league.id) },
+        OR: [
+          { status: 'LIVE' },
+          {
+            status: 'SCHEDULED',
+            matchDate: {
+              gte: new Date(now - LIVE_KICKOFF_LOOKBACK_MS),
+              lte: new Date(now + LIVE_KICKOFF_LOOKAHEAD_MS),
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!candidate) {
+      livePollGate.backoff(LIVE_IDLE_BACKOFF_MS);
+      logger.debug('Skipping live match sync — no watched match is live or about to start');
+      return { updated: 0, events: 0, errors: 0, skipped: true };
+    }
+
+    logger.info({ leagueIds }, 'Starting live match sync from API-Football');
+
+    let response: ApiFootballResponse<ApiFootballFixture>;
+
+    try {
+      response = await apiFootball.get<ApiFootballFixture>('/fixtures', {
+        live: leagueIds.join('-'),
+      });
+    } catch (err) {
+      if (isApiFootballAuthOrQuotaError(err)) {
+        livePollGate.backoff(LIVE_UPSTREAM_BACKOFF_MS);
+        logger.error({ err }, 'Stopping live match sync — API-Football returned 403 or 429');
+      }
+
+      throw err;
+    }
+
+    const watchedIds = new Set(leagueIds);
+    const liveFixtures = response.response.filter((item) => watchedIds.has(item.league.id));
 
     if (liveFixtures.length === 0) {
-      logger.debug('No live fixtures found');
-      return { updated: 0, events: 0, errors: 0 };
+      livePollGate.backoff(LIVE_IDLE_BACKOFF_MS);
+      logger.debug('No live fixtures found for watched leagues');
+      return { updated: 0, events: 0, errors: 0, skipped: false };
     }
+
+    livePollGate.clear();
 
     let updated = 0;
     let events = 0;
@@ -195,6 +283,10 @@ export const syncLiveMatchesService = {
             }
           }
         } catch (err) {
+          if (isApiFootballAuthOrQuotaError(err)) {
+            throw err;
+          }
+
           logger.error(
             { err, fixtureId: item.fixture.id },
             'Failed to fetch events for live fixture',
@@ -202,6 +294,15 @@ export const syncLiveMatchesService = {
           errors++;
         }
       } catch (err) {
+        if (isApiFootballAuthOrQuotaError(err)) {
+          livePollGate.backoff(LIVE_UPSTREAM_BACKOFF_MS);
+          logger.error(
+            { err, fixtureId: item.fixture.id },
+            'Stopping live match sync — API-Football returned 403 or 429',
+          );
+          throw err;
+        }
+
         logger.error({ err, fixtureId: item.fixture.id }, 'Failed to sync live fixture');
         errors++;
       }
@@ -215,6 +316,6 @@ export const syncLiveMatchesService = {
       'Live match sync completed',
     );
 
-    return { updated, events, errors };
+    return { updated, events, errors, skipped: false };
   },
 };
