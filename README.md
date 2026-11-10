@@ -200,7 +200,7 @@ List endpoints use a paginated envelope. `data` is an array:
 
 Single-resource `GET`, `POST`, and `PUT` responses are `{ "success": true, "data": { } }` with no pagination `meta`, except API key creation (below). `DELETE` returns **204** with an empty body.
 
-A database wake-up timeout is **503** `DATABASE_UNAVAILABLE` (`Database is temporarily unavailable. Retry shortly.`) with `Retry-After: 5`, after one retry inside `catchAsync`. Other `AppError`s look like:
+A database wake-up timeout is **503** `DATABASE_UNAVAILABLE` (`Database is temporarily unavailable. Retry shortly.`) with `Retry-After: 5`, after one retry of a GET or HEAD inside `catchAsync`. Writes are not retried. Other `AppError`s look like:
 
 ```json
 {
@@ -362,7 +362,7 @@ Live sync still has a 60-second scheduler so a match that is in progress can mov
 - `SYNC_LEAGUE_IDS` is empty (no database query either)
 - the in-process backoff window is open
 - none of the watched leagues exist in Postgres yet (backoff 30 minutes)
-- no watched match is `LIVE`, or `SCHEDULED` with a kickoff from 15 minutes ahead through 3 hours ago (backoff 10 minutes)
+- no watched match is `LIVE` or `SCHEDULED` with a kickoff from 15 minutes ahead through 3 hours ago (backoff 10 minutes). A `LIVE` row older than that window does not qualify. Before the poll, those rows are set to `FINISHED` in Postgres, so a missed or rate-limited match sync cannot leave them live or keep the 10-minute polls going
 
 When it does call, the request is `GET /fixtures?live=39-140-2` (hyphen-separated watched ids, the form from the same beginner guide), not `live=all`. Fixtures for other leagues are ignored. An empty live payload backs off 10 minutes. HTTP 403 or 429 backs off 60 minutes. That gate is in memory (`src/services/livePollGate.ts`), so a process restart tries once and, if the upstream error is still there, waits another hour.
 
@@ -370,7 +370,7 @@ With the default three leagues, a quiet day is 3 league requests, 3 team request
 
 ### Database wake-up
 
-Idle Railway Postgres can time out on the first query while it starts. `pg` uses a 10 second connection timeout. `catchAsync` retries that request once after 2 seconds if the response has not started. If it still fails, the error handler returns **503** `DATABASE_UNAVAILABLE` with `Retry-After: 5` instead of **500** `DATABASE_ERROR`. The same mapping covers Prisma codes `P1001`, `P1002`, `P1008`, `P1017`, and `P2024`, driver codes such as `ETIMEDOUT`, and Postgres `57P03` (the database system is starting up). That 503 is not cached.
+Idle Railway Postgres can time out on the first query while it starts. `pg` uses a 10 second connection timeout. `catchAsync` retries a GET or HEAD once after 2 seconds if the response has not started. POST, PUT, PATCH, and DELETE are not retried: a timeout after the insert already committed would run the write again, and manual creates do not require `externalId` (PostgreSQL allows multiple nulls in that unique column). If the attempt still fails, the error handler returns **503** `DATABASE_UNAVAILABLE` with `Retry-After: 5` instead of **500** `DATABASE_ERROR`. The same mapping covers Prisma codes `P1001`, `P1002`, `P1008`, `P1017`, and `P2024`, driver codes such as `ETIMEDOUT`, and Postgres `57P03` (the database system is starting up). That 503 is not cached.
 
 ### Job Configuration
 

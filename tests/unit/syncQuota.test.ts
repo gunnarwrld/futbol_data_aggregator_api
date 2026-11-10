@@ -17,6 +17,7 @@ vi.mock('../../src/config/database.js', () => ({
       findFirst: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       upsert: vi.fn(),
     },
     team: { findUnique: vi.fn() },
@@ -65,7 +66,7 @@ import { prisma } from '../../src/config/database.js';
 import { apiFootball, ApiFootballRequestError } from '../../src/integrations/apiFootball.js';
 import { invalidateCache } from '../../src/middleware/cache.js';
 import { leagueRepository } from '../../src/repositories/league.repository.js';
-import { livePollGate } from '../../src/services/livePollGate.js';
+import { LIVE_KICKOFF_LOOKBACK_MS, livePollGate } from '../../src/services/livePollGate.js';
 import { syncLeaguesService } from '../../src/services/syncLeagues.service.js';
 import { syncLiveMatchesService } from '../../src/services/syncLiveMatches.service.js';
 import { syncMatchesService } from '../../src/services/syncMatches.service.js';
@@ -91,6 +92,8 @@ describe('sync quota', () => {
     vi.mocked(prisma.league.findMany).mockReset();
     vi.mocked(prisma.match.findFirst).mockReset();
     vi.mocked(prisma.match.findUnique).mockReset();
+    vi.mocked(prisma.match.updateMany).mockReset();
+    vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 0 } as never);
     vi.mocked(leagueRepository.upsertByExternalId).mockClear();
     vi.mocked(invalidateCache).mockClear();
   });
@@ -235,6 +238,43 @@ describe('sync quota', () => {
       expect(apiFootball.get).not.toHaveBeenCalled();
       expect(prisma.league.findMany).toHaveBeenCalledTimes(1);
       expect(prisma.match.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.match.findFirst).toHaveBeenCalledWith({
+        where: {
+          leagueId: { in: ['league-1'] },
+          status: { in: ['LIVE', 'SCHEDULED'] },
+          matchDate: {
+            gte: expect.any(Date),
+            lte: expect.any(Date),
+          },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('finishes a LIVE match outside the kickoff window without calling API-Football', async () => {
+      vi.mocked(prisma.league.findMany).mockResolvedValue([{ id: 'league-1' }] as never);
+      vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 1 } as never);
+      vi.mocked(prisma.match.findFirst).mockResolvedValue(null);
+
+      const first = await syncLiveMatchesService.syncLive();
+      const second = await syncLiveMatchesService.syncLive();
+
+      expect(first.skipped).toBe(true);
+      expect(second.skipped).toBe(true);
+      expect(apiFootball.get).not.toHaveBeenCalled();
+      expect(prisma.match.updateMany).toHaveBeenCalledTimes(1);
+      expect(invalidateCache).toHaveBeenCalledWith('matches:*');
+
+      const update = vi.mocked(prisma.match.updateMany).mock.calls[0]?.[0] as {
+        where: { leagueId: { in: string[] }; status: string; matchDate: { lt: Date } };
+        data: { status: string };
+      };
+      expect(update.data).toEqual({ status: 'FINISHED' });
+      expect(update.where.leagueId).toEqual({ in: ['league-1'] });
+      expect(update.where.status).toBe('LIVE');
+      const ageMs = Date.now() - update.where.matchDate.lt.getTime();
+      expect(ageMs).toBeGreaterThan(LIVE_KICKOFF_LOOKBACK_MS - 5_000);
+      expect(ageMs).toBeLessThan(LIVE_KICKOFF_LOOKBACK_MS + 5_000);
     });
 
     it('backs off after an empty live payload for the watched leagues', async () => {
