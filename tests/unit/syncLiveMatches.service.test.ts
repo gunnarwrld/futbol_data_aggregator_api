@@ -12,7 +12,12 @@ const to = vi.fn(() => ({ emit }));
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
     league: { findMany: vi.fn() },
-    match: { findUnique: vi.fn(), update: vi.fn(), findFirst: vi.fn() },
+    match: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+      updateMany: vi.fn(),
+    },
     team: { findUnique: vi.fn() },
     player: { findUnique: vi.fn() },
     matchEvent: { findFirst: vi.fn(), create: vi.fn() },
@@ -78,6 +83,7 @@ describe('syncLiveMatchesService', () => {
     vi.clearAllMocks();
     vi.mocked(prisma.league.findMany).mockResolvedValue([{ id: 'league-1' }] as never);
     vi.mocked(prisma.match.findFirst).mockResolvedValue({ id: 'candidate' } as never);
+    vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 0 });
     to.mockReturnValue({ emit });
     vi.mocked(getSocketIO).mockReturnValue({ to } as never);
     vi.mocked(invalidateCache).mockResolvedValue();
