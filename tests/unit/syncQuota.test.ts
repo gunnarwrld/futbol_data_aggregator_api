@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as ApiFootballModule from '../../src/integrations/apiFootball.js';
 
 vi.mock('../../src/config/index.js', () => ({
   config: {
@@ -49,7 +50,7 @@ vi.mock('../../src/config/socket.js', () => ({
 }));
 
 vi.mock('../../src/integrations/apiFootball.js', async () => {
-  const actual = await vi.importActual<typeof import('../../src/integrations/apiFootball.js')>(
+  const actual = await vi.importActual<typeof ApiFootballModule>(
     '../../src/integrations/apiFootball.js',
   );
 
@@ -93,7 +94,7 @@ describe('sync quota', () => {
     vi.mocked(prisma.match.findFirst).mockReset();
     vi.mocked(prisma.match.findUnique).mockReset();
     vi.mocked(prisma.match.updateMany).mockReset();
-    vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 0 } as never);
+    vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 0 });
     vi.mocked(leagueRepository.upsertByExternalId).mockClear();
     vi.mocked(invalidateCache).mockClear();
   });
@@ -106,7 +107,7 @@ describe('sync quota', () => {
         errors: [],
         results: 1,
         paging: { current: 1, total: 1 },
-        response: [leaguePayload(Number(params?.['id'] ?? 0), 'League')],
+        response: [leaguePayload(Number(params?.id ?? 0), 'League')],
       }));
 
       const result = await syncLeaguesService.syncAll();
@@ -253,7 +254,7 @@ describe('sync quota', () => {
 
     it('finishes a LIVE match outside the kickoff window without calling API-Football', async () => {
       vi.mocked(prisma.league.findMany).mockResolvedValue([{ id: 'league-1' }] as never);
-      vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 1 } as never);
+      vi.mocked(prisma.match.updateMany).mockResolvedValue({ count: 1 });
       vi.mocked(prisma.match.findFirst).mockResolvedValue(null);
 
       const first = await syncLiveMatchesService.syncLive();
@@ -279,7 +280,7 @@ describe('sync quota', () => {
 
     it('backs off after an empty live payload for the watched leagues', async () => {
       vi.mocked(prisma.league.findMany).mockResolvedValue([{ id: 'league-1' }] as never);
-      vi.mocked(prisma.match.findFirst).mockResolvedValue({ id: 'match-1' } as never);
+      vi.mocked(prisma.match.findFirst).mockResolvedValue({ id: 'match-1' });
       vi.mocked(apiFootball.get).mockResolvedValue({
         get: 'fixtures',
         parameters: {},
@@ -292,7 +293,7 @@ describe('sync quota', () => {
             league: { id: 999 },
           },
         ],
-      } as never);
+      });
 
       const first = await syncLiveMatchesService.syncLive();
       const second = await syncLiveMatchesService.syncLive();
