@@ -51,7 +51,14 @@ function mapEventType(type: string, detail: string): string {
  * - `SYNC_LEAGUE_IDS` is empty
  * - a backoff window is open (idle, empty database, or 403/429)
  * - none of the watched leagues are stored yet
- * - no watched match is `LIVE` or scheduled inside the kickoff window
+ * - no watched match is `LIVE` or `SCHEDULED` inside the kickoff window
+ *
+ * A `LIVE` row whose kickoff is older than that window is not a reason to
+ * call API-Football. `syncLive` only writes `LIVE` for fixtures still in the
+ * live feed, so those rows would otherwise stay `LIVE` until the 6-hour
+ * match sync. They are set to `FINISHED` locally first. An empty live
+ * payload then cannot keep spending a request every 10 minutes, including
+ * when that match sync stops on HTTP 429.
  *
  * When a request is made, `live` is the watched ids joined with hyphens
  * (`live=39-140-2`), not `live=all`.
@@ -100,19 +107,34 @@ export const syncLiveMatchesService = {
     }
 
     const now = Date.now();
+    const windowStart = new Date(now - LIVE_KICKOFF_LOOKBACK_MS);
+    const windowEnd = new Date(now + LIVE_KICKOFF_LOOKAHEAD_MS);
+    const watchedLeagueIds = leagues.map((league) => league.id);
+
+    // Past the window a match cannot still be in progress. Close it here so
+    // a stuck LIVE status cannot schedule another upstream request.
+    const finishedStale = await prisma.match.updateMany({
+      where: {
+        leagueId: { in: watchedLeagueIds },
+        status: 'LIVE',
+        matchDate: { lt: windowStart },
+      },
+      data: { status: 'FINISHED' },
+    });
+
+    if (finishedStale.count > 0) {
+      logger.info(
+        { count: finishedStale.count },
+        'Marked live matches past the kickoff window as finished',
+      );
+      await invalidateCache('matches:*');
+    }
+
     const candidate = await prisma.match.findFirst({
       where: {
-        leagueId: { in: leagues.map((league) => league.id) },
-        OR: [
-          { status: 'LIVE' },
-          {
-            status: 'SCHEDULED',
-            matchDate: {
-              gte: new Date(now - LIVE_KICKOFF_LOOKBACK_MS),
-              lte: new Date(now + LIVE_KICKOFF_LOOKAHEAD_MS),
-            },
-          },
-        ],
+        leagueId: { in: watchedLeagueIds },
+        status: { in: ['LIVE', 'SCHEDULED'] },
+        matchDate: { gte: windowStart, lte: windowEnd },
       },
       select: { id: true },
     });

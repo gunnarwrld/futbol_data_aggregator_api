@@ -9,6 +9,18 @@ import { isTransientDatabaseError } from './databaseErrors.js';
 export const DATABASE_RETRY_DELAY_MS = 2_000;
 
 /**
+ * Methods that only read. A retried POST, PUT, PATCH, or DELETE can run the
+ * write again after the first attempt already committed: manual creates do
+ * not require `externalId`, and PostgreSQL treats each NULL as distinct, so
+ * the unique column does not stop a second insert.
+ */
+const RETRY_SAFE_METHODS = new Set(['GET', 'HEAD']);
+
+function canRetryTransientDatabaseError(req: Request, res: Response): boolean {
+  return !res.headersSent && RETRY_SAFE_METHODS.has(req.method.toUpperCase());
+}
+
+/**
  * Wraps an async Express route handler to automatically catch rejected
  * promises and forward them to the Express error-handling middleware.
  *
@@ -16,8 +28,8 @@ export const DATABASE_RETRY_DELAY_MS = 2_000;
  * would cause the request to hang indefinitely.
  *
  * A transient database error (wake-up timeout, connection reset) is retried
- * once when the response has not started. The retry is not attempted after
- * headers are sent, and a second failure is forwarded as-is.
+ * once for GET and HEAD when the response has not started. Writes are not
+ * retried. A second failure is forwarded as-is.
  *
  * @example
  * ```ts
@@ -32,7 +44,7 @@ export const catchAsync = (
 ) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     fn(req, res, next).catch((err: unknown) => {
-      if (res.headersSent || !isTransientDatabaseError(err)) {
+      if (!isTransientDatabaseError(err) || !canRetryTransientDatabaseError(req, res)) {
         next(err);
         return;
       }

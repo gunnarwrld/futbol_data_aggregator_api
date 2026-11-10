@@ -49,7 +49,7 @@ describe('catchAsync database retry', () => {
     const next = vi.fn();
     const res = { headersSent: false } as Response;
 
-    catchAsync(fn)({} as Request, res, next);
+    catchAsync(fn)({ method: 'GET' } as Request, res, next);
     await vi.advanceTimersByTimeAsync(0);
 
     expect(fn).toHaveBeenCalledTimes(1);
@@ -70,7 +70,7 @@ describe('catchAsync database retry', () => {
       .mockRejectedValueOnce(second);
     const next = vi.fn();
 
-    catchAsync(fn)({} as Request, { headersSent: false } as Response, next);
+    catchAsync(fn)({ method: 'GET' } as Request, { headersSent: false } as Response, next);
     await vi.advanceTimersByTimeAsync(DATABASE_RETRY_DELAY_MS);
 
     expect(fn).toHaveBeenCalledTimes(2);
@@ -86,7 +86,7 @@ describe('catchAsync database retry', () => {
       .mockRejectedValueOnce(err);
     const next = vi.fn();
 
-    catchAsync(fn)({} as Request, { headersSent: true } as Response, next);
+    catchAsync(fn)({ method: 'GET' } as Request, { headersSent: true } as Response, next);
     await vi.advanceTimersByTimeAsync(DATABASE_RETRY_DELAY_MS);
 
     expect(fn).toHaveBeenCalledTimes(1);
@@ -100,11 +100,45 @@ describe('catchAsync database retry', () => {
       .mockRejectedValueOnce(err);
     const next = vi.fn();
 
-    catchAsync(fn)({} as Request, { headersSent: false } as Response, next);
+    catchAsync(fn)({ method: 'GET' } as Request, { headersSent: false } as Response, next);
     await Promise.resolve();
     await Promise.resolve();
 
     expect(fn).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenCalledWith(err);
   });
+
+  it('retries HEAD the same way as GET', async () => {
+    vi.useFakeTimers();
+    const fn = vi
+      .fn<(req: Request, res: Response, next: NextFunction) => Promise<void>>()
+      .mockRejectedValueOnce(timeoutError())
+      .mockResolvedValueOnce(undefined);
+    const next = vi.fn();
+
+    catchAsync(fn)({ method: 'head' } as Request, { headersSent: false } as Response, next);
+    await vi.advanceTimersByTimeAsync(DATABASE_RETRY_DELAY_MS);
+
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])(
+    'does not retry %s after a transient database error',
+    async (method) => {
+      vi.useFakeTimers();
+      const err = timeoutError();
+      const fn = vi
+        .fn<(req: Request, res: Response, next: NextFunction) => Promise<void>>()
+        .mockRejectedValueOnce(err);
+      const next = vi.fn();
+
+      catchAsync(fn)({ method } as Request, { headersSent: false } as Response, next);
+      await vi.advanceTimersByTimeAsync(DATABASE_RETRY_DELAY_MS);
+
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledWith(err);
+    },
+  );
 });
