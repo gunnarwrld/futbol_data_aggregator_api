@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { matchController } from '../../controllers/match.controller.js';
 import { cacheMiddleware } from '../../middleware/cache.js';
+import { requireApiKey } from '../../middleware/requireApiKey.js';
 
 const router = Router();
 
@@ -13,12 +14,12 @@ router.get('/:id', cacheMiddleware(60, 'matches'), matchController.findById);
 router
   .route('/')
   .get(cacheMiddleware(120, 'matches'), matchController.findAll)
-  .post(matchController.create);
+  .post(requireApiKey, matchController.create);
 
 router
   .route('/:id')
   .get(matchController.findById)
-  .put(matchController.update)
-  .delete(matchController.delete);
+  .put(requireApiKey, matchController.update)
+  .delete(requireApiKey, matchController.delete);
 
 export { router as matchRouter };

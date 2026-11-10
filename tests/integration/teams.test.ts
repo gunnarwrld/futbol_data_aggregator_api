@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { app } from '../../src/app.js';
-import { createPlayer, createTeam } from './fixtures.js';
+import { apiKeyHeader, createPlayer, createTeam } from './fixtures.js';
 
 const MISSING_ID = '00000000-0000-4000-8000-000000000088';
 
@@ -18,7 +18,8 @@ describe('teams API', () => {
   });
 
   it('creates, updates, and deletes a team', async () => {
-    const created = await request(app).post('/api/v1/teams').send({
+    const auth = await apiKeyHeader();
+    const created = await request(app).post('/api/v1/teams').set(auth).send({
       name: 'Sporting CP',
       shortName: 'SCP',
       stadium: 'José Alvalade',
@@ -26,11 +27,14 @@ describe('teams API', () => {
     expect(created.status).toBe(201);
     const id = created.body.data.id as string;
 
-    const updated = await request(app).put(`/api/v1/teams/${id}`).send({ stadium: 'Alvalade' });
+    const updated = await request(app)
+      .put(`/api/v1/teams/${id}`)
+      .set(auth)
+      .send({ stadium: 'Alvalade' });
     expect(updated.status).toBe(200);
     expect(updated.body.data.stadium).toBe('Alvalade');
 
-    expect((await request(app).delete(`/api/v1/teams/${id}`)).status).toBe(204);
+    expect((await request(app).delete(`/api/v1/teams/${id}`).set(auth)).status).toBe(204);
     expect((await request(app).get(`/api/v1/teams/${id}`)).status).toBe(404);
   });
 
@@ -38,7 +42,9 @@ describe('teams API', () => {
     const team = await createTeam();
     await createPlayer(team.id);
 
-    const response = await request(app).delete(`/api/v1/teams/${team.id}`);
+    const response = await request(app)
+      .delete(`/api/v1/teams/${team.id}`)
+      .set(await apiKeyHeader());
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('FOREIGN_KEY_ERROR');

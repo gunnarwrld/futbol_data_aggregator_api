@@ -4,7 +4,7 @@ import { logger } from './config/logger.js';
 import { disconnectDatabase } from './config/database.js';
 import { disconnectRedis } from './config/redis.js';
 import { initializeSocket, getSocketIO } from './config/socket.js';
-import { initializeWorkers, shutdownWorkers } from './workers/index.js';
+import { LISTEN_HOST, listenAndThen } from './startup/listen.js';
 
 /**
  * Server entry point.
@@ -16,25 +16,31 @@ import { initializeWorkers, shutdownWorkers } from './workers/index.js';
  * - Redis connections are properly closed
  * - Resources are cleaned up before process exit
  */
-const server = app.listen(config.PORT, () => {
+let workersStarting: Promise<void> | null = null;
+
+const server = listenAndThen(app, config.PORT, () => {
   logger.info(
     {
+      host: LISTEN_HOST,
       port: config.PORT,
       env: config.NODE_ENV,
       pid: process.pid,
     },
-    `🚀 Server running on http://localhost:${config.PORT}`,
+    `🚀 Server listening on ${LISTEN_HOST}:${config.PORT}`,
   );
   logger.info(`📚 API docs: http://localhost:${config.PORT}/api/v1`);
   logger.info(`❤️  Health check: http://localhost:${config.PORT}/health`);
 
-  // Initialize Real-time Push Layer (Socket.io)
+  // Socket.io attaches to the already-listening server.
   initializeSocket(server);
 
-  // Start BullMQ workers after the server is ready
-  initializeWorkers().catch((err: unknown) => {
-    logger.error({ err }, 'Failed to initialize BullMQ workers');
-  });
+  // BullMQ opens Redis connections at import. Load it only after accept()
+  // so a sleeping Redis cannot block or crash startup before the port is open.
+  workersStarting = import('./workers/index.js')
+    .then((workers) => workers.initializeWorkers())
+    .catch((err: unknown) => {
+      logger.error({ err }, 'Failed to initialize BullMQ workers');
+    });
 });
 
 /* ── Graceful Shutdown ───────────────────────────────────── */
@@ -74,8 +80,12 @@ async function gracefulShutdown(signal: string): Promise<void> {
       // Socket might not be initialized if startup failed early
     }
 
-    // 2. Shut down BullMQ workers and queues
-    await shutdownWorkers();
+    // 2. Shut down BullMQ workers and queues, if startup reached them.
+    if (workersStarting) {
+      await workersStarting;
+      const workers = await import('./workers/index.js');
+      await workers.shutdownWorkers();
+    }
 
     // 3. Disconnect database
     await disconnectDatabase();

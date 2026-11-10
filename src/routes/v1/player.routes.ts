@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { playerController } from '../../controllers/player.controller.js';
 import { cacheMiddleware } from '../../middleware/cache.js';
+import { requireApiKey } from '../../middleware/requireApiKey.js';
 
 const router = Router();
 
@@ -8,13 +9,13 @@ const router = Router();
 router
   .route('/')
   .get(cacheMiddleware(300, 'players'), playerController.findAll)
-  .post(playerController.create);
+  .post(requireApiKey, playerController.create);
 
 // Cache individual player for 10 minutes
 router
   .route('/:id')
   .get(cacheMiddleware(600, 'players'), playerController.findById)
-  .put(playerController.update)
-  .delete(playerController.delete);
+  .put(requireApiKey, playerController.update)
+  .delete(requireApiKey, playerController.delete);
 
 export { router as playerRouter };

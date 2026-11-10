@@ -23,12 +23,12 @@ Badge versions are the floors of the ranges in `package.json` (`typescript` ^6.0
 
 ## 📐 Architecture
 
-HTTP traffic and background sync share one process. `src/server.ts` listens, then attaches Socket.io and starts the BullMQ workers.
+HTTP traffic and background sync share one process. `src/server.ts` binds `0.0.0.0:$PORT` before it imports BullMQ, so a sleeping Redis cannot delay or crash listen. The Docker entrypoint runs `prisma migrate deploy` and then the server. Prisma 7.8's CLI does not exit on success while any handle is open, which left that `&&` chain stuck after "No pending migrations to apply"; `scripts/patch-prisma-migrate-exit.mjs` makes the installed CLI exit so the process reaches listen.
 
 ```
 Request
   → helmet, CORS, compression, JSON body, pino-http
-  → API key auth (optional) → Redis sliding-window rate limit
+  → API key auth (optional on reads; required for writes and key admin) → Redis sliding-window rate limit
   → Routes (per-route Redis cache on some GETs)
   → Controllers → Services → Repositories → PostgreSQL (Prisma + pg adapter)
                               ↕
@@ -47,7 +47,7 @@ Request
 | **Repositories** | Prisma queries only. |
 | **Integrations** | API-Football HTTP client (`src/integrations/apiFootball.ts`). |
 | **Workers** | Four BullMQ queues started from `src/workers/index.ts` when the server boots. |
-| **Middleware** | Security headers, CORS, compression, request logs, optional API key auth, Redis sliding-window rate limit, Redis response cache, and a stricter in-memory limiter on API key creation. |
+| **Middleware** | Security headers, CORS, compression, request logs, optional API key auth on reads, a required API key on writes and key admin, Redis sliding-window rate limit, Redis response cache, and a stricter in-memory limiter on API key creation. |
 | **Config** | Zod-validated environment (`src/config/index.ts`). Invalid or missing required variables exit the process before listen. |
 
 `src/middleware/validateRequest.ts` can validate `body`, `query`, or `params` with Zod, but no route mounts it. The Zod schema that actually runs on startup is the environment schema. Resource inputs are read in the controllers.
@@ -166,7 +166,7 @@ curl http://localhost:3000/api/v1/matches/live
 curl http://localhost:3000/api/v1/players
 ```
 
-`GET /health` returns `{ success, data: { status, timestamp, uptime } }`. `/health` is excluded from pino auto-logging. It still passes through API key auth and the sliding-window limiter.
+`GET /health` returns `{ success, data: { status, timestamp, uptime } }`. `/health` is excluded from pino auto-logging. It is registered before API key auth and the sliding-window limiter, so probes do not need a key and do not spend the anonymous budget.
 
 ### Tests
 
@@ -393,7 +393,7 @@ Replace the host with the [live API](https://futboldataaggregatorapi-production.
 
 Three rate-limiter exports exist. The sliding-window limiter is the one on normal API traffic.
 
-1. **`slidingWindowRateLimiter`** — mounted globally in `src/app.ts` after optional API key auth. Redis sorted-set log, 1-hour window.
+1. **`slidingWindowRateLimiter`** — mounted globally in `src/app.ts` after API key auth. Redis sorted-set log, 1-hour window. A missing Redis fails the limiter open within the client's command timeout so a sleeping cache does not hold the request until the proxy times out.
 2. **`strictRateLimiter`** — `express-rate-limit`, in memory, **only** on `POST /api/v1/api-keys` (10 requests per 60 seconds). It is not shared across server instances.
 3. **`rateLimiter`** — also `express-rate-limit`, configured from `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_MAX_REQUESTS`. Nothing mounts it.
 
@@ -405,7 +405,7 @@ Three rate-limiter exports exist. The sliding-window limiter is the one on norma
 | `standard` key | 1,000 requests/hour unless `rateLimit` is set on create | API key id |
 | `premium` key | 5,000 requests/hour unless `rateLimit` is set on create | API key id |
 
-A missing header is anonymous access, not a 401. An unknown, revoked, or expired key is **401** and does not fall through as anonymous.
+A missing header is anonymous access on public reads (`GET /health`, `GET /api/v1/leagues`, `GET /api/v1/teams`, `GET /api/v1/matches`, `GET /api/v1/matches/live`, and `GET /api/v1/players`), not a 401. `POST`, `PUT`, `PATCH`, and `DELETE` on leagues, teams, matches, and players require a valid key (`401` `API_KEY_REQUIRED` when the header is absent). Listing, creating, and revoking API keys require a valid key too. An unknown, revoked, or expired key is **401** `INVALID_API_KEY` and does not fall through as anonymous.
 
 The app never calls `express.set('trust proxy', ...)`. Behind a reverse proxy, `req.ip` is the proxy address, so the anonymous sliding window and the API-key creation limiter are shared by every client that arrives through that proxy. Authenticated limits are keyed by API key id and are not affected.
 
@@ -425,9 +425,18 @@ X-RateLimit-Reset: 3600
 
 `name` is required. `tier` is `standard` (default) or `premium`. Optional `rateLimit` overrides the tier default. Optional `expiresAt` is parsed with `new Date`.
 
+The HTTP routes that mint and manage keys require an existing valid key. Create the first key from a shell that has `DATABASE_URL` set (this prints the raw key once):
+
+```bash
+npm run admin:create-key -- "My Mobile App"
+```
+
+Further keys can be created with that credential:
+
 ```bash
 curl -X POST http://localhost:3000/api/v1/api-keys \
   -H "Content-Type: application/json" \
+  -H "x-api-key: fda_<64 hex chars>" \
   -d '{"name": "My Mobile App", "tier": "standard"}'
 ```
 
