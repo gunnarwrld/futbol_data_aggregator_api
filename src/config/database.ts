@@ -14,8 +14,15 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+// Bound the first connection so a sleeping Railway Postgres fails fast enough
+// for a single retry, instead of hanging until the platform proxy gives up.
+const DATABASE_CONNECTION_TIMEOUT_MS = 10_000;
+
 // Initialize the database connection pool using the pg driver
-const pool = new pg.Pool({ connectionString: config.DATABASE_URL });
+const pool = new pg.Pool({
+  connectionString: config.DATABASE_URL,
+  connectionTimeoutMillis: DATABASE_CONNECTION_TIMEOUT_MS,
+});
 const adapter = new PrismaPg(pool);
 
 export const prisma =

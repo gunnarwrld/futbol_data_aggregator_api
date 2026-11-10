@@ -115,6 +115,7 @@ Copy `.env.example` and fill it in. Names and defaults match `src/config/index.t
 | `REDIS_URL` | no | `redis://localhost:6379` | Cache, sliding-window rate limit, BullMQ |
 | `API_FOOTBALL_KEY` | yes | — | API-Football `x-apisports-key` header |
 | `API_FOOTBALL_BASE_URL` | no | `https://v3.football.api-sports.io` | API-Football base URL |
+| `SYNC_LEAGUE_IDS` | no | `39,140,2` | Comma-separated API-Football league IDs that league, team, match, and live sync are allowed to request. Empty syncs nothing. See [Sync league limit](#sync-league-limit). |
 | `RATE_LIMIT_WINDOW_MS` | no | `900000` | Only the **unmounted** `rateLimiter` in `src/middleware/rateLimiter.ts` |
 | `RATE_LIMIT_MAX_REQUESTS` | no | `100` | Same. Changing these does not change live API limits. |
 | `LOG_LEVEL` | no | `info` | Pino level (`fatal` through `trace`) |
@@ -174,7 +175,7 @@ curl http://localhost:3000/api/v1/players
 npm test
 ```
 
-Vitest runs the unit and integration suites under `tests/`. Unit tests mock external services; integration tests exercise the HTTP API against PostgreSQL and Redis. `tests/setup.ts` supplies test environment values, and the integration setup prepares a disposable test database. Run `npm test` for the suites or `npm run test:coverage` for the CI coverage run; integration tests require PostgreSQL and Redis as configured in `vitest.config.ts`.
+Vitest runs the unit and integration suites under `tests/`. Unit tests mock external services and cover the HTTP cache, database timeout handling, and the sync league limit. Integration tests exercise the HTTP API against PostgreSQL and Redis. `tests/setup.ts` supplies test environment values, and the integration setup prepares a disposable test database. Run `npm test` for the suites or `npm run test:coverage` for the CI coverage run; integration tests require PostgreSQL and Redis as configured in `vitest.config.ts`.
 
 The Husky `pre-commit` hook runs `npm test`. `commit-msg` runs Commitlint.
 
@@ -199,7 +200,7 @@ List endpoints use a paginated envelope. `data` is an array:
 
 Single-resource `GET`, `POST`, and `PUT` responses are `{ "success": true, "data": { } }` with no pagination `meta`, except API key creation (below). `DELETE` returns **204** with an empty body.
 
-Errors from `AppError` look like:
+A database wake-up timeout is **503** `DATABASE_UNAVAILABLE` (`Database is temporarily unavailable. Retry shortly.`) with `Retry-After: 5`, after one retry inside `catchAsync`. Other `AppError`s look like:
 
 ```json
 {
@@ -215,6 +216,8 @@ Errors from `AppError` look like:
 ### V1 Routes
 
 Cache TTLs are the `cacheMiddleware` values on the route. Cached responses set `X-Cache: HIT` or `MISS`. `POST` / `PUT` / `DELETE` are not cached. Successful league, team, match, and player writes call `invalidateCache` with that resource's prefix (`leagues:*`, `teams:*`, `matches:*`, or `players:*`). API key routes are not cached.
+
+Only successful responses are stored. A response is skipped when its HTTP status is outside 2xx or its JSON body has `success: false` (including `DATABASE_ERROR`). The cache keeps the body and not the status, so storing an error would replay it later as HTTP 200. If Redis already holds an error envelope, the middleware deletes that key and treats the request as a miss.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -329,12 +332,45 @@ Schedules are registered with `upsertJobScheduler` in `src/workers/index.ts`.
 
 | Queue | Schedule | What it does |
 |---|---|---|
-| `sync-leagues` | Cron `0 3 * * *` (daily at 03:00, server local time) | `syncLeaguesService.syncAll()` |
-| `sync-teams` | Cron `0 4 * * *` (daily at 04:00) | `syncTeamsService.syncAll()` |
-| `sync-matches` | Every 6 hours (`every: 6 * 60 * 60 * 1000`) | `syncMatchesService.syncAll()` |
-| `sync-live-matches` | Every 60 seconds | `syncLiveMatchesService.syncLive()` |
+| `sync-leagues` | Cron `0 3 * * *` (daily at 03:00, server local time) | `syncLeaguesService.syncAll()` — one `GET /leagues?id=` per watched id |
+| `sync-teams` | Cron `0 4 * * *` (daily at 04:00) | `syncTeamsService.syncAll()` — one `GET /teams` per watched league stored in Postgres |
+| `sync-matches` | Every 6 hours (`every: 6 * 60 * 60 * 1000`) | `syncMatchesService.syncAll()` — one `GET /fixtures` per watched league stored in Postgres |
+| `sync-live-matches` | Every 60 seconds | `syncLiveMatchesService.syncLive()` — usually makes **no** API-Football request; see below |
 
 League and team jobs are cron patterns, not "every 24 hours from boot". Match sync and live sync are interval jobs.
+
+### Sync league limit
+
+`SYNC_LEAGUE_IDS` is the only set of API-Football competitions the sync jobs will request. The free tier is 100 requests per day, and team, match, and live sync used to walk every league row (or call `GET /fixtures?live=all` every minute).
+
+The default, used when the variable is unset, is `39,140,2`:
+
+| ID | Competition | Source |
+|---|---|---|
+| `39` | Premier League | [API-Football beginner guide](https://www.api-football.com/news/post/how-to-get-started-with-api-football-the-complete-beginners-guide) (`league=39`, and "the Premier League is always `39`") |
+| `140` | La Liga | Same guide ("La Liga is always `140`") |
+| `2` | UEFA Champions League | Same guide ("the Champions League is always `2`") |
+
+Liga Portugal, LigaPro Ecuador, Liga Profesional Argentina, Copa Libertadores, and Copa Sudamericana are not in the default. Their IDs are not in this repo or that guide. Look them up on the [API-Football leagues dashboard](https://dashboard.api-football.com/) and append the numeric ids. Do not guess.
+
+Set `SYNC_LEAGUE_IDS` to an empty value to sync nothing. An invalid token (anything that is not a positive integer) fails process startup.
+
+On a 403 or 429, league, team, and match sync stop the loop instead of requesting the remaining leagues. BullMQ would otherwise retry a thrown league or team job three times.
+
+Live sync still has a 60-second scheduler so a match that is in progress can move quickly, but `syncLive()` does not call API-Football when:
+
+- `SYNC_LEAGUE_IDS` is empty (no database query either)
+- the in-process backoff window is open
+- none of the watched leagues exist in Postgres yet (backoff 30 minutes)
+- no watched match is `LIVE`, or `SCHEDULED` with a kickoff from 15 minutes ahead through 3 hours ago (backoff 10 minutes)
+
+When it does call, the request is `GET /fixtures?live=39-140-2` (hyphen-separated watched ids, the form from the same beginner guide), not `live=all`. Fixtures for other leagues are ignored. An empty live payload backs off 10 minutes. HTTP 403 or 429 backs off 60 minutes. That gate is in memory (`src/services/livePollGate.ts`), so a process restart tries once and, if the upstream error is still there, waits another hour.
+
+With the default three leagues, a quiet day is 3 league requests, 3 team requests, and 12 match requests (one fixtures call per league every 6 hours). Team and match sync make no API-Football call until those leagues exist in Postgres. Live requests are added only while a watched match is in the kickoff window, plus one events request per live fixture on each of those ticks.
+
+### Database wake-up
+
+Idle Railway Postgres can time out on the first query while it starts. `pg` uses a 10 second connection timeout. `catchAsync` retries that request once after 2 seconds if the response has not started. If it still fails, the error handler returns **503** `DATABASE_UNAVAILABLE` with `Retry-After: 5` instead of **500** `DATABASE_ERROR`. The same mapping covers Prisma codes `P1001`, `P1002`, `P1008`, `P1017`, and `P2024`, driver codes such as `ETIMEDOUT`, and Postgres `57P03` (the database system is starting up). That 503 is not cached.
 
 ### Job Configuration
 

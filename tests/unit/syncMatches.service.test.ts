@@ -15,6 +15,7 @@ vi.mock('../../src/config/database.js', () => ({
 
 vi.mock('../../src/integrations/apiFootball.js', () => ({
   apiFootball: { get: vi.fn() },
+  isApiFootballAuthOrQuotaError: () => false,
 }));
 
 vi.mock('../../src/middleware/cache.js', () => ({

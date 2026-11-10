@@ -6,6 +6,7 @@ import { syncLeaguesService } from '../../src/services/syncLeagues.service.js';
 
 vi.mock('../../src/integrations/apiFootball.js', () => ({
   apiFootball: { get: vi.fn() },
+  isApiFootballAuthOrQuotaError: () => false,
 }));
 
 vi.mock('../../src/repositories/league.repository.js', () => ({
@@ -38,28 +39,38 @@ describe('syncLeaguesService', () => {
   });
 
   it('upserts the current season and invalidates the league cache', async () => {
-    vi.mocked(apiFootball.get).mockResolvedValue({
-      response: [
-        league(94, 'Primeira Liga', [
-          { year: 2024, current: false },
-          { year: 2025, current: true },
-        ]),
-        league(95, 'Cup', []),
-      ],
-    } as Awaited<ReturnType<typeof apiFootball.get>>);
+    vi.mocked(apiFootball.get).mockImplementation(async (_endpoint, params) => {
+      const id = Number(params?.id);
+      if (id === 39) {
+        return {
+          response: [
+            league(39, 'Premier League', [
+              { year: 2024, current: false },
+              { year: 2025, current: true },
+            ]),
+          ],
+        } as Awaited<ReturnType<typeof apiFootball.get>>;
+      }
+      if (id === 140) {
+        return {
+          response: [league(140, 'La Liga', [])],
+        } as Awaited<ReturnType<typeof apiFootball.get>>;
+      }
+      return { response: [] } as Awaited<ReturnType<typeof apiFootball.get>>;
+    });
 
     const result = await syncLeaguesService.syncAll();
 
-    expect(result).toEqual({ synced: 2, errors: 0 });
-    expect(leagueRepository.upsertByExternalId).toHaveBeenNthCalledWith(1, 94, {
-      externalId: 94,
-      name: 'Primeira Liga',
+    expect(result).toEqual({ synced: 2, errors: 1 });
+    expect(leagueRepository.upsertByExternalId).toHaveBeenNthCalledWith(1, 39, {
+      externalId: 39,
+      name: 'Premier League',
       country: 'Portugal',
       season: '2025/2026',
     });
-    expect(leagueRepository.upsertByExternalId).toHaveBeenNthCalledWith(2, 95, {
-      externalId: 95,
-      name: 'Cup',
+    expect(leagueRepository.upsertByExternalId).toHaveBeenNthCalledWith(2, 140, {
+      externalId: 140,
+      name: 'La Liga',
       country: 'Portugal',
       season: 'Unknown',
     });
@@ -67,12 +78,15 @@ describe('syncLeaguesService', () => {
   });
 
   it('counts a failed upsert and still clears the cache', async () => {
-    vi.mocked(apiFootball.get).mockResolvedValue({
-      response: [league(94, 'Primeira Liga', [{ year: 2025, current: true }])],
-    } as Awaited<ReturnType<typeof apiFootball.get>>);
+    vi.mocked(apiFootball.get).mockImplementation(async (_endpoint, params) => {
+      const id = Number(params?.id);
+      return {
+        response: [league(id, 'Primeira Liga', [{ year: 2025, current: true }])],
+      } as Awaited<ReturnType<typeof apiFootball.get>>;
+    });
     vi.mocked(leagueRepository.upsertByExternalId).mockRejectedValue(new Error('unique'));
 
-    await expect(syncLeaguesService.syncAll()).resolves.toEqual({ synced: 0, errors: 1 });
+    await expect(syncLeaguesService.syncAll()).resolves.toEqual({ synced: 0, errors: 3 });
     expect(invalidateCache).toHaveBeenCalledWith('leagues:*');
   });
 });
