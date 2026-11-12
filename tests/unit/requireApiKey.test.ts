@@ -23,7 +23,7 @@ describe('requireApiKey', () => {
     const next = vi.fn();
     const req = {
       headers: { 'x-api-key': 'fda_present' },
-      apiKey: { id: '1', name: 'Mobile', tier: 'standard', rateLimit: 1000 },
+      apiKey: { id: '1', name: 'Mobile', tier: 'standard', rateLimit: 1000, isAdmin: false },
     } as Request;
 
     requireApiKey(req, createRes(), next as NextFunction);

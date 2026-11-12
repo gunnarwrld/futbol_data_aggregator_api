@@ -28,7 +28,7 @@ HTTP traffic and background sync share one process. `src/server.ts` binds `0.0.0
 ```
 Request
   → helmet, CORS, compression, JSON body, pino-http
-  → API key auth (optional on reads; required for writes and key admin) → Redis sliding-window rate limit
+  → API key auth (optional on reads; required for writes; admin scope required for key admin) → Redis sliding-window rate limit
   → Routes (per-route Redis cache on some GETs)
   → Controllers → Services → Repositories → PostgreSQL (Prisma + pg adapter)
                               ↕
@@ -47,7 +47,7 @@ Request
 | **Repositories** | Prisma queries only. |
 | **Integrations** | API-Football HTTP client (`src/integrations/apiFootball.ts`). |
 | **Workers** | Four BullMQ queues started from `src/workers/index.ts` when the server boots. |
-| **Middleware** | Security headers, CORS, compression, request logs, optional API key auth on reads, a required API key on writes and key admin, Redis sliding-window rate limit, Redis response cache, and a stricter in-memory limiter on API key creation. |
+| **Middleware** | Security headers, CORS, compression, request logs, optional API key auth on reads, a required API key on writes and an admin key on key administration, Redis sliding-window rate limit, Redis response cache, and a stricter in-memory limiter on API key creation. |
 | **Config** | Zod-validated environment (`src/config/index.ts`). Invalid or missing required variables exit the process before listen. |
 
 `src/middleware/validateRequest.ts` can validate `body`, `query`, or `params` with Zod, but no route mounts it. The Zod schema that actually runs on startup is the environment schema. Resource inputs are read in the controllers.
@@ -243,9 +243,9 @@ Only successful responses are stored. A response is skipped when its HTTP status
 | `POST` | `/api/v1/players` | Create a player |
 | `PUT` | `/api/v1/players/:id` | Update a player |
 | `DELETE` | `/api/v1/players/:id` | Delete a player |
-| `POST` | `/api/v1/api-keys` | Generate a key (also limited to 10 requests/minute/IP) |
-| `GET` | `/api/v1/api-keys` | List keys. `meta` is `{ "total": N }`, not page fields. Hashes are omitted. |
-| `PATCH` | `/api/v1/api-keys/:id/revoke` | Revoke a key (`isActive: false`) |
+| `POST` | `/api/v1/api-keys` | Generate a non-admin key (admin key required; also limited to 10 requests/minute/IP) |
+| `GET` | `/api/v1/api-keys` | List keys (admin key required). `meta` is `{ "total": N }`, not page fields. Hashes are omitted. |
+| `PATCH` | `/api/v1/api-keys/:id/revoke` | Revoke a key (admin key required; `isActive: false`) |
 
 There is no `GET /api/v1` index route. A request there falls through to the 404 handler.
 
@@ -441,7 +441,7 @@ Three rate-limiter exports exist. The sliding-window limiter is the one on norma
 | `standard` key | 1,000 requests/hour unless `rateLimit` is set on create | API key id |
 | `premium` key | 5,000 requests/hour unless `rateLimit` is set on create | API key id |
 
-A missing header is anonymous access on public reads (`GET /health`, `GET /api/v1/leagues`, `GET /api/v1/teams`, `GET /api/v1/matches`, `GET /api/v1/matches/live`, and `GET /api/v1/players`), not a 401. `POST`, `PUT`, `PATCH`, and `DELETE` on leagues, teams, matches, and players require a valid key (`401` `API_KEY_REQUIRED` when the header is absent). Listing, creating, and revoking API keys require a valid key too. An unknown, revoked, or expired key is **401** `INVALID_API_KEY` and does not fall through as anonymous.
+A missing header is anonymous access on public reads (`GET /health`, `GET /api/v1/leagues`, `GET /api/v1/teams`, `GET /api/v1/matches`, `GET /api/v1/matches/live`, and `GET /api/v1/players`), not a 401. `POST`, `PUT`, `PATCH`, and `DELETE` on leagues, teams, matches, and players require a valid key (`401` `API_KEY_REQUIRED` when the header is absent). Listing, creating, and revoking API keys require an **admin** key; a valid non-admin key gets **403** `ADMIN_KEY_REQUIRED`. Resource writes accept any valid key, regardless of admin scope. An unknown, revoked, or expired key is **401** `INVALID_API_KEY` and does not fall through as anonymous.
 
 The app never calls `express.set('trust proxy', ...)`. Behind a reverse proxy, `req.ip` is the proxy address, so the anonymous sliding window and the API-key creation limiter are shared by every client that arrives through that proxy. Authenticated limits are keyed by API key id and are not affected.
 
@@ -461,10 +461,12 @@ X-RateLimit-Reset: 3600
 
 `name` is required. `tier` is `standard` (default) or `premium`. Optional `rateLimit` overrides the tier default. Optional `expiresAt` is parsed with `new Date`.
 
-The HTTP routes that mint and manage keys require an existing valid key. Create the first key from a shell that has `DATABASE_URL` set (this prints the raw key once):
+The HTTP routes that mint and manage keys require an existing **admin** key. HTTP creation ignores `isAdmin` and always creates non-admin consumer keys. Only the bootstrap CLI mints admin keys.
+
+After migrations, run this inside the production container with its configured `DATABASE_URL`. It prints the raw admin key once and exits. For local use, run `npm run build` first, then the same command:
 
 ```bash
-npm run admin:create-key -- "My Mobile App"
+npm run admin:create-key -- "Production admin"
 ```
 
 Further keys can be created with that credential:
@@ -487,6 +489,7 @@ curl -X POST http://localhost:3000/api/v1/api-keys \
       "prefix": "fda_a1b2c3d4",
       "tier": "standard",
       "rateLimit": 1000,
+      "isAdmin": false,
       "isActive": true,
       "expiresAt": null,
       "createdAt": "2026-01-01T00:00:00.000Z"
@@ -499,6 +502,12 @@ curl -X POST http://localhost:3000/api/v1/api-keys \
 ```
 
 The raw key is `fda_` plus 32 random bytes as hex (64 hex characters). Only the SHA-256 hex digest is stored. `prefix` is the first 12 characters (`fda_` plus 8 hex characters).
+
+### Reviewing legacy keys after deploy
+
+The migration sets every existing key to `isAdmin = false`. Legacy keys keep ordinary resource write access but lose key administration. Neither the migration nor application startup auto-revokes keys.
+
+After creating the new admin key, use it to `GET /api/v1/api-keys`. Review each key's prefix, name, and `lastUsedAt`. Revoke unrecognised keys with `PATCH /api/v1/api-keys/:id/revoke`. Mint fresh consumer keys for consumers you still want, distribute the replacements securely, then revoke the old keys.
 
 ### Using the Key
 

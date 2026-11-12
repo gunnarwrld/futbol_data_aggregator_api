@@ -6,6 +6,13 @@ export async function apiKeyHeader(name = 'Integration'): Promise<{ 'x-api-key':
   return { 'x-api-key': created.rawKey };
 }
 
+export async function adminApiKeyHeader(
+  name = 'Integration admin',
+): Promise<{ 'x-api-key': string }> {
+  const created = await apiKeyService.create({ name, isAdmin: true });
+  return { 'x-api-key': created.rawKey };
+}
+
 export async function createLeague(
   overrides: Partial<{
     name: string;

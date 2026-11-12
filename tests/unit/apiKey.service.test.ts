@@ -25,6 +25,7 @@ function storedKey(overrides: Record<string, unknown> = {}) {
     prefix: 'fda_abcdef12',
     tier: 'standard',
     rateLimit: 1000,
+    isAdmin: false,
     isActive: true,
     expiresAt: null,
     lastUsedAt: null,
@@ -50,6 +51,10 @@ describe('apiKeyService', () => {
     expect(result.apiKey.prefix).toBe(result.rawKey.slice(0, 12));
     expect(result.apiKey.rateLimit).toBe(1000);
     expect(result.apiKey.tier).toBe('standard');
+    expect(result.apiKey.isAdmin).toBe(false);
+    expect(delegate.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ isAdmin: false }) }),
+    );
     const saved = vi.mocked(delegate.create).mock.calls[0]?.[0] as {
       data: { hashedKey: string; prefix: string };
     };
@@ -66,6 +71,11 @@ describe('apiKeyService', () => {
     });
 
     const premium = await apiKeyService.create({ name: 'Pro', tier: 'premium' });
+    const admin = await apiKeyService.create({ name: 'Admin', isAdmin: true });
+    expect(admin.apiKey.isAdmin).toBe(true);
+    expect(delegate.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ isAdmin: true }) }),
+    );
     const custom = await apiKeyService.create({ name: 'Tight', tier: 'premium', rateLimit: 25 });
 
     expect(premium.apiKey.rateLimit).toBe(5000);
@@ -120,6 +130,9 @@ describe('apiKeyService', () => {
       where: { id: 'key-1' },
       data: { isActive: false },
     });
+    expect(delegate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ select: expect.objectContaining({ isAdmin: true }) }),
+    );
     expect(delegate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         select: expect.not.objectContaining({ hashedKey: true }),
