@@ -45,6 +45,7 @@ export const apiKeyService = {
    */
   async create(data: {
     name: string;
+    isAdmin?: boolean;
     tier?: 'standard' | 'premium';
     rateLimit?: number;
     expiresAt?: Date;
@@ -64,6 +65,7 @@ export const apiKeyService = {
     const apiKey = await prisma.apiKey.create({
       data: {
         name: data.name,
+        isAdmin: data.isAdmin ?? false,
         hashedKey: hashed,
         prefix,
         tier,
@@ -83,6 +85,7 @@ export const apiKeyService = {
         prefix: apiKey.prefix,
         tier: apiKey.tier,
         rateLimit: apiKey.rateLimit,
+        isAdmin: apiKey.isAdmin,
         isActive: apiKey.isActive,
         expiresAt: apiKey.expiresAt,
         createdAt: apiKey.createdAt,
@@ -150,6 +153,7 @@ export const apiKeyService = {
         prefix: true,
         tier: true,
         rateLimit: true,
+        isAdmin: true,
         isActive: true,
         lastUsedAt: true,
         expiresAt: true,

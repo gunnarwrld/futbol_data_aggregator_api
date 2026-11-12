@@ -12,7 +12,7 @@
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "postinstall": "node scripts/patch-prisma-migrate-exit.mjs",
-    "admin:create-key": "tsx scripts/create-api-key.ts",
+    "admin:create-key": "node dist/cli/createAdminKey.js",
     "lint": "eslint src/ tests/",
     "lint:fix": "eslint src/ tests/ --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",

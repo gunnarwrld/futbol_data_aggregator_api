@@ -73,12 +73,13 @@ describe('authenticateApiKey', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('attaches the key tier and limit for a valid key', async () => {
+  it.each([false, true])('attaches key metadata with isAdmin=%s', async (isAdmin) => {
     validate.mockResolvedValue({
       id: 'key-1',
       name: 'Mobile',
       tier: 'premium',
       rateLimit: 5000,
+      isAdmin,
     } as Awaited<ReturnType<typeof apiKeyService.validate>>);
     const next = vi.fn();
     const req = { headers: { 'x-api-key': 'fda_valid' } } as unknown as Request;
@@ -90,6 +91,7 @@ describe('authenticateApiKey', () => {
       name: 'Mobile',
       tier: 'premium',
       rateLimit: 5000,
+      isAdmin,
     });
     expect(next).toHaveBeenCalledOnce();
   });

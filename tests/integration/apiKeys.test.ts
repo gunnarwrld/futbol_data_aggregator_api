@@ -4,23 +4,40 @@ import { redis } from '../../src/config/redis.js';
 import { prisma } from '../../src/config/database.js';
 import { app } from '../../src/app.js';
 import { apiKeyService } from '../../src/services/apiKey.service.js';
-import { apiKeyHeader } from './fixtures.js';
+import { adminApiKeyHeader, apiKeyHeader } from './fixtures.js';
 
 describe('API keys', () => {
+  it('denies non-admin keys access to list, create, and revoke', async () => {
+    const auth = await apiKeyHeader();
+    const responses = await Promise.all([
+      request(app).get('/api/v1/api-keys').set(auth),
+      request(app).post('/api/v1/api-keys').set(auth).send({ name: 'Denied' }),
+      request(app).patch('/api/v1/api-keys/00000000-0000-4000-8000-000000000077/revoke').set(auth),
+    ]);
+    for (const response of responses) {
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe('ADMIN_KEY_REQUIRED');
+    }
+  });
+
   it('creates a key once, lists it without the secret, and revokes it', async () => {
-    const auth = await apiKeyHeader('Bootstrap');
+    const auth = await adminApiKeyHeader('Bootstrap');
     const created = await request(app).post('/api/v1/api-keys').set(auth).send({
       name: 'Mobile App',
       tier: 'standard',
+      isAdmin: true,
     });
 
     expect(created.status).toBe(201);
+    expect(created.body.data.apiKey.isAdmin).toBe(false);
     expect(created.body.data.rawKey).toMatch(/^fda_[0-9a-f]{64}$/);
     expect(created.body.data.apiKey.prefix).toBe(created.body.data.rawKey.slice(0, 12));
     expect(created.body.data.apiKey.rateLimit).toBe(1000);
     expect(created.body.meta.warning).toContain('will NOT be shown again');
     const rawKey = created.body.data.rawKey as string;
     const id = created.body.data.apiKey.id as string;
+
+    expect((await prisma.apiKey.findUniqueOrThrow({ where: { id } })).isAdmin).toBe(false);
 
     const listed = await request(app).get('/api/v1/api-keys').set(auth);
     expect(listed.status).toBe(200);
@@ -45,7 +62,7 @@ describe('API keys', () => {
   });
 
   it('requires a name and stores premium and custom limits', async () => {
-    const auth = await apiKeyHeader('Bootstrap');
+    const auth = await adminApiKeyHeader('Bootstrap');
     const missing = await request(app).post('/api/v1/api-keys').set(auth).send({ tier: 'premium' });
     expect(missing.status).toBe(400);
     expect(missing.body.error.code).toBe('BAD_REQUEST');
