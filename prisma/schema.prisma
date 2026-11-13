@@ -93,6 +93,7 @@ model ApiKey {
   prefix     String    // First 8 chars of raw key for identification
   tier       String    @default("standard") // "standard" | "premium"
   rateLimit  Int       @default(1000) // Requests per hour for this key
+  isAdmin    Boolean   @default(false)
   isActive   Boolean   @default(true)
   lastUsedAt DateTime?
   expiresAt  DateTime?

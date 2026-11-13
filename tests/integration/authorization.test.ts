@@ -58,6 +58,19 @@ describe('API key requirement', () => {
     expect(response.body.error.code).toBe('INVALID_API_KEY');
   });
 
+  it('rejects non-admin keys on every key administration route', async () => {
+    const auth = await apiKeyHeader();
+    const responses = await Promise.all([
+      request(app).get('/api/v1/api-keys').set(auth),
+      request(app).post('/api/v1/api-keys').set(auth).send({ name: 'Forbidden' }),
+      request(app).patch(`/api/v1/api-keys/${MISSING_ID}/revoke`).set(auth),
+    ]);
+    for (const response of responses) {
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe('ADMIN_KEY_REQUIRED');
+    }
+  });
+
   it('allows a write with a valid key', async () => {
     const response = await request(app)
       .post('/api/v1/leagues')
