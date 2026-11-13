@@ -15,6 +15,7 @@ declare global {
         name: string;
         tier: string;
         rateLimit: number;
+        isAdmin: boolean;
       };
     }
   }
@@ -35,7 +36,7 @@ declare global {
  *   (rate limited at the key's configured limit, default 1000 req/hr)
  *
  * Public reads stay anonymous. `requireApiKey` is what rejects a missing key
- * on writes and on key administration.
+ * on writes; key administration uses `requireAdmin`.
  */
 export async function authenticateApiKey(
   req: Request,
@@ -71,6 +72,7 @@ export async function authenticateApiKey(
       name: apiKey.name,
       tier: apiKey.tier,
       rateLimit: apiKey.rateLimit,
+      isAdmin: apiKey.isAdmin,
     };
 
     logger.debug({ apiKeyId: apiKey.id, tier: apiKey.tier }, 'API key authenticated');
