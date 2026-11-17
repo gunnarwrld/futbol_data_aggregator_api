@@ -61,7 +61,7 @@ describe('syncMatchesService', () => {
     vi.clearAllMocks();
     vi.mocked(invalidateCache).mockResolvedValue();
     vi.mocked(prisma.league.findMany).mockResolvedValue([
-      { id: 'league-1', externalId: 94, season: '2025/2026' },
+      { id: 'league-1', externalId: 94 },
     ] as Awaited<ReturnType<typeof prisma.league.findMany>>);
     vi.mocked(prisma.team.findUnique).mockImplementation(async (args) => {
       const externalId = (args as { where: { externalId: number } }).where.externalId;
@@ -85,6 +85,7 @@ describe('syncMatchesService', () => {
 
     const result = await syncMatchesService.syncAll();
 
+    expect(apiFootball.get).toHaveBeenCalledWith('/fixtures', { league: 94, season: 2024 });
     expect(result).toEqual({ synced: 5, errors: 0 });
     const statuses = vi.mocked(prisma.match.upsert).mock.calls.map((call) => {
       const arg = call[0] as { create: { externalId: number; status: string; homeScore: number } };
@@ -102,8 +103,8 @@ describe('syncMatchesService', () => {
 
   it('counts a provider failure for a league and a failed upsert separately', async () => {
     vi.mocked(prisma.league.findMany).mockResolvedValue([
-      { id: 'league-1', externalId: 94, season: 'bad' },
-      { id: 'league-2', externalId: 95, season: '2024/2025' },
+      { id: 'league-1', externalId: 94 },
+      { id: 'league-2', externalId: 95 },
     ] as Awaited<ReturnType<typeof prisma.league.findMany>>);
     vi.mocked(apiFootball.get)
       .mockResolvedValueOnce({
@@ -115,7 +116,7 @@ describe('syncMatchesService', () => {
     await expect(syncMatchesService.syncAll()).resolves.toEqual({ synced: 0, errors: 2 });
     expect(apiFootball.get).toHaveBeenCalledWith('/fixtures', {
       league: 94,
-      season: new Date().getFullYear(),
+      season: 2024,
     });
   });
 });
