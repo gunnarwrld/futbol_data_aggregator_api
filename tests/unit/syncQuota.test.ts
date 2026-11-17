@@ -6,6 +6,7 @@ vi.mock('../../src/config/index.js', () => ({
     NODE_ENV: 'test',
     LOG_LEVEL: 'silent',
     SYNC_LEAGUE_IDS: [39, 140, 2],
+    SYNC_SEASON: 2024,
     API_FOOTBALL_KEY: 'test',
     API_FOOTBALL_BASE_URL: 'https://v3.football.api-sports.io',
   },
@@ -77,6 +78,10 @@ function setLeagueIds(ids: number[]): void {
   (config as { SYNC_LEAGUE_IDS: number[] }).SYNC_LEAGUE_IDS = ids;
 }
 
+function setSeason(year: number): void {
+  (config as { SYNC_SEASON: number }).SYNC_SEASON = year;
+}
+
 function leaguePayload(id: number, name: string) {
   return {
     league: { id, name, type: 'League', logo: '' },
@@ -88,6 +93,7 @@ function leaguePayload(id: number, name: string) {
 describe('sync quota', () => {
   beforeEach(() => {
     setLeagueIds([39, 140, 2]);
+    setSeason(2024);
     livePollGate.clear();
     vi.mocked(apiFootball.get).mockReset();
     vi.mocked(prisma.league.findMany).mockReset();
@@ -152,8 +158,8 @@ describe('sync quota', () => {
   describe('teams and matches', () => {
     it('loads teams only for watched external ids and stops on 403', async () => {
       vi.mocked(prisma.league.findMany).mockResolvedValue([
-        { externalId: 39, season: '2025/2026' },
-        { externalId: 140, season: '2025/2026' },
+        { externalId: 39 },
+        { externalId: 140 },
       ] as never);
       vi.mocked(apiFootball.get).mockRejectedValue(
         new ApiFootballRequestError(429, 'Too Many Requests'),
@@ -163,11 +169,32 @@ describe('sync quota', () => {
 
       expect(prisma.league.findMany).toHaveBeenCalledWith({
         where: { externalId: { in: [39, 140, 2] } },
-        select: { externalId: true, season: true },
+        select: { externalId: true },
       });
       expect(apiFootball.get).toHaveBeenCalledTimes(1);
-      expect(apiFootball.get).toHaveBeenCalledWith('/teams', { league: 39, season: 2025 });
+      expect(apiFootball.get).toHaveBeenCalledWith('/teams', { league: 39, season: 2024 });
       expect(result.errors).toBe(1);
+    });
+
+    it('requests teams and matches for SYNC_SEASON instead of the league row', async () => {
+      setSeason(2023);
+      vi.mocked(prisma.league.findMany).mockResolvedValue([
+        { id: 'league-1', externalId: 39 },
+      ] as never);
+      vi.mocked(apiFootball.get).mockResolvedValue({
+        get: 'teams',
+        parameters: {},
+        errors: [],
+        results: 0,
+        paging: { current: 1, total: 1 },
+        response: [],
+      });
+
+      await syncTeamsService.syncAll();
+      await syncMatchesService.syncAll();
+
+      expect(apiFootball.get).toHaveBeenCalledWith('/teams', { league: 39, season: 2023 });
+      expect(apiFootball.get).toHaveBeenCalledWith('/fixtures', { league: 39, season: 2023 });
     });
 
     it('does not query Postgres or API-Football for teams when no leagues are configured', async () => {
@@ -187,7 +214,7 @@ describe('sync quota', () => {
 
       expect(prisma.league.findMany).toHaveBeenCalledWith({
         where: { externalId: { in: [39, 140, 2] } },
-        select: { id: true, externalId: true, season: true },
+        select: { id: true, externalId: true },
       });
       expect(apiFootball.get).not.toHaveBeenCalled();
       expect(result).toEqual({ synced: 0, errors: 0 });
