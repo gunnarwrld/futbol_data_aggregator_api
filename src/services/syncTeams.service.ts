@@ -13,7 +13,8 @@ import { type ApiFootballTeam } from '../types/index.js';
  * into PostgreSQL. Only leagues whose `externalId` is in `SYNC_LEAGUE_IDS`
  * are queried, so a database full of other competitions is not walked.
  * Leagues must be synced first. An empty `SYNC_LEAGUE_IDS` makes no requests.
- * A 403 or 429 stops the loop.
+ * The season year is `SYNC_SEASON` (default 2024) so the Free plan can
+ * serve team data. A 403 or 429 stops the loop.
  *
  * API-Football endpoint: GET /teams?league={id}&season={year}
  * Schedule: Every 24 hours
@@ -32,11 +33,13 @@ export const syncTeamsService = {
       return { synced: 0, errors: 0 };
     }
 
-    logger.info({ leagueIds }, 'Starting team sync from API-Football');
+    const seasonYear = config.SYNC_SEASON;
+
+    logger.info({ leagueIds, season: seasonYear }, 'Starting team sync from API-Football');
 
     const leagues = await prisma.league.findMany({
       where: { externalId: { in: leagueIds } },
-      select: { externalId: true, season: true },
+      select: { externalId: true },
     });
 
     let synced = 0;
@@ -46,9 +49,6 @@ export const syncTeamsService = {
       if (!league.externalId) continue;
 
       try {
-        // Extract the starting year from "2025/2026" → 2025
-        const seasonYear = Number(league.season.split('/')[0]) || new Date().getFullYear();
-
         const response = await apiFootball.get<ApiFootballTeam>('/teams', {
           league: league.externalId,
           season: seasonYear,

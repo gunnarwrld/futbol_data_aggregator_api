@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 import { syncLeagueIdsSchema } from './syncLeagueIds.js';
+import { syncSeasonSchema } from './syncSeason.js';
 
 dotenv.config();
 
@@ -29,6 +30,12 @@ const envSchema = z.object({
    * Default is Premier League (39), La Liga (140), and the Champions League (2).
    */
   SYNC_LEAGUE_IDS: syncLeagueIdsSchema,
+
+  /**
+   * API-Football season year for team and match sync. The Free plan
+   * only serves 2022–2024, so this defaults to 2024 when unset.
+   */
+  SYNC_SEASON: syncSeasonSchema,
 
   /* ── Rate Limiting ─────────────────────────────────────── */
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
