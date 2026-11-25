@@ -43,7 +43,9 @@ const STATUS_MAP: Record<string, string> = {
  * Fetches fixtures (matches) for each watched league from API-Football and
  * upserts them into PostgreSQL. Resolves team references by `externalId`.
  * Only leagues whose `externalId` is in `SYNC_LEAGUE_IDS` are queried.
- * An empty list makes no requests. A 403 or 429 stops the loop.
+ * An empty list makes no requests. The season year is `SYNC_SEASON`
+ * (default 2024) so the Free plan can serve fixture data. A 403 or 429
+ * stops the loop.
  *
  * API-Football endpoint: GET /fixtures?league={id}&season={year}
  * Schedule: Every 6 hours (catches newly scheduled fixtures)
@@ -62,11 +64,13 @@ export const syncMatchesService = {
       return { synced: 0, errors: 0 };
     }
 
-    logger.info({ leagueIds }, 'Starting match sync from API-Football');
+    const seasonYear = config.SYNC_SEASON;
+
+    logger.info({ leagueIds, season: seasonYear }, 'Starting match sync from API-Football');
 
     const leagues = await prisma.league.findMany({
       where: { externalId: { in: leagueIds } },
-      select: { id: true, externalId: true, season: true },
+      select: { id: true, externalId: true },
     });
 
     let synced = 0;
@@ -76,8 +80,6 @@ export const syncMatchesService = {
       if (!league.externalId) continue;
 
       try {
-        const seasonYear = Number(league.season.split('/')[0]) || new Date().getFullYear();
-
         const response = await apiFootball.get<ApiFootballFixture>('/fixtures', {
           league: league.externalId,
           season: seasonYear,

@@ -116,6 +116,7 @@ Copy `.env.example` and fill it in. Names and defaults match `src/config/index.t
 | `API_FOOTBALL_KEY` | yes | — | API-Football `x-apisports-key` header |
 | `API_FOOTBALL_BASE_URL` | no | `https://v3.football.api-sports.io` | API-Football base URL |
 | `SYNC_LEAGUE_IDS` | no | `39,140,2` | Comma-separated API-Football league IDs that league, team, match, and live sync are allowed to request. Empty syncs nothing. See [Sync league limit](#sync-league-limit). |
+| `SYNC_SEASON` | no | `2024` | API-Football season year used by team and match sync. See [Free-plan season limit](#free-plan-season-limit). |
 | `RATE_LIMIT_WINDOW_MS` | no | `900000` | Only the **unmounted** `rateLimiter` in `src/middleware/rateLimiter.ts` |
 | `RATE_LIMIT_MAX_REQUESTS` | no | `100` | Same. Changing these does not change live API limits. |
 | `LOG_LEVEL` | no | `info` | Pino level (`fatal` through `trace`) |
@@ -333,8 +334,8 @@ Schedules are registered with `upsertJobScheduler` in `src/workers/index.ts`.
 | Queue | Schedule | What it does |
 |---|---|---|
 | `sync-leagues` | Cron `0 3 * * *` (daily at 03:00, server local time) | `syncLeaguesService.syncAll()` — one `GET /leagues?id=` per watched id |
-| `sync-teams` | Cron `0 4 * * *` (daily at 04:00) | `syncTeamsService.syncAll()` — one `GET /teams` per watched league stored in Postgres |
-| `sync-matches` | Every 6 hours (`every: 6 * 60 * 60 * 1000`) | `syncMatchesService.syncAll()` — one `GET /fixtures` per watched league stored in Postgres |
+| `sync-teams` | Cron `0 4 * * *` (daily at 04:00) | `syncTeamsService.syncAll()` — one `GET /teams?season={SYNC_SEASON}` per watched league stored in Postgres |
+| `sync-matches` | Every 6 hours (`every: 6 * 60 * 60 * 1000`) | `syncMatchesService.syncAll()` — one `GET /fixtures?season={SYNC_SEASON}` per watched league stored in Postgres |
 | `sync-live-matches` | Every 60 seconds | `syncLiveMatchesService.syncLive()` — usually makes **no** API-Football request; see below |
 
 League and team jobs are cron patterns, not "every 24 hours from boot". Match sync and live sync are interval jobs.
@@ -355,6 +356,14 @@ Liga Portugal, LigaPro Ecuador, Liga Profesional Argentina, Copa Libertadores, a
 
 Set `SYNC_LEAGUE_IDS` to an empty value to sync nothing. An invalid token (anything that is not a positive integer) fails process startup.
 
+### Free-plan season limit
+
+API-Football's Free plan only serves seasons **2022–2024**. A request for the current season (for example 2025 or 2026) returns a plan error such as "Free plans do not have access to this season, try from 2022 to 2024." That is an upstream plan restriction, not a bug in this API.
+
+Team and match sync therefore use `SYNC_SEASON` (default `2024` when unset) instead of the current season stored on the league row. League sync still records the current season from `GET /leagues`. The demo can then return teams and fixtures for 2024 while staying on the Free plan and still only requesting leagues `39`, `140`, and `2`.
+
+Paid API-Football plans can set `SYNC_SEASON` to the current year. The value must be a 4-digit year between 2000 and 2100; anything else fails process startup. Live match sync is unchanged: it only polls fixtures that are already in Postgres and already in the kickoff window.
+
 On a 403 or 429, league, team, and match sync stop the loop instead of requesting the remaining leagues. BullMQ would otherwise retry a thrown league or team job three times.
 
 Live sync still has a 60-second scheduler so a match that is in progress can move quickly, but `syncLive()` does not call API-Football when:
@@ -366,7 +375,7 @@ Live sync still has a 60-second scheduler so a match that is in progress can mov
 
 When it does call, the request is `GET /fixtures?live=39-140-2` (hyphen-separated watched ids, the form from the same beginner guide), not `live=all`. Fixtures for other leagues are ignored. An empty live payload backs off 10 minutes. HTTP 403 or 429 backs off 60 minutes. That gate is in memory (`src/services/livePollGate.ts`), so a process restart tries once and, if the upstream error is still there, waits another hour.
 
-With the default three leagues, a quiet day is 3 league requests, 3 team requests, and 12 match requests (one fixtures call per league every 6 hours). Team and match sync make no API-Football call until those leagues exist in Postgres. Live requests are added only while a watched match is in the kickoff window, plus one events request per live fixture on each of those ticks.
+With the default three leagues, a quiet day is 3 league requests, 3 team requests, and 12 match requests (one fixtures call per league every 6 hours). Those team and match calls use `SYNC_SEASON` (default 2024). They make no API-Football call until those leagues exist in Postgres. Live requests are added only while a watched match is in the kickoff window, plus one events request per live fixture on each of those ticks.
 
 ### Database wake-up
 
